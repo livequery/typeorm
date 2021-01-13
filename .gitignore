@@ -1,0 +1,10 @@
+node_modules
+yarn*
+bin
+build
+dist
+data
+out
+bin
+build
+types.ts

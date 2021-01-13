@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "target": "es2017",
+    "sourceMap": false,
+    "outDir": "./build",
+    "incremental": false,
+    "rootDir": ".",
+    "lib": [
+      "esnext.asynciterable","dom"
+    ]
+  },
+  "exclude": [
+    "node_modules",
+    "out",
+    "src/schema.ts",
+    "bin",
+    "build"
+  ]
+}
