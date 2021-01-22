@@ -25,7 +25,7 @@ export async function TypeormQueryMapper<T>(
         mapper[expression] && mapper[expression](key, value)
     }
 
-    if (query.cursor || !where[query.order_by]) {
+    if (query.cursor || where[query.order_by]) {
         const compareFunction = query.sort == 'asc' ? MoreThan : LessThan
         const compareValue = query.cursor ? JSON.parse(Buffer.from(query.cursor, 'base64').toString('utf8')) : (query.sort == 'asc' ? 0 : Date.now())
         where[query.order_by] = compareFunction(compareValue)
