@@ -22,7 +22,7 @@ export class TypeormMappingInterceptor implements NestInterceptor {
         const { name: method } = context.getHandler()
         const controller_datasources = listTypeormDatasources(constructorRef.prototype)
         const { entity, search_fields } = controller_datasources?.get(method)[0]
-        const repository = await this.EntityManager.getRepository(entity)
+        const repository = await this.EntityManager.getRepository<{ created_at: number }>(entity)
 
         // Mapping with DB
         const request = context.switchToHttp().getRequest<LivequeryRequest>()
