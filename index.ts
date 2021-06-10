@@ -1,2 +1,1 @@
-export { TypeormDateSourceMapping } from "./src/decorators/TypeormDateSourceMapping";
-export { TypeormBindingLivequeryModule } from "./src/typeorm.livequery.module"; 
+export { TypeormDatasource } from "./src/TypeormDatasource"; 

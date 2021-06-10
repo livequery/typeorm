@@ -12,7 +12,9 @@
     "incremental": false,
     "rootDir": ".",
     "lib": [
-      "esnext.asynciterable","dom"
+      "esnext.asynciterable",
+      "dom",
+      "ESNext.String"
     ]
   },
   "exclude": [
