@@ -3,7 +3,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.5",
+    "version": "1.0.6",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
@@ -12,7 +12,7 @@
     ],
     "dependencies": {
         "@livequery/core": "^1.0.6",
-        "@livequery/types": "^1.0.13",
+        "@livequery/types": "^1.0.15",
         "@nestjs/typeorm": "^7.1.5",
         "pg": "^8.5.1",
         "pg-listen": "^1.7.0",
@@ -26,7 +26,7 @@
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "build": "tsc -b .",
-        "deploy": "yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish"
+        "deploy": "yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish --access public"
     },
     "author": "",
     "license": "ISC"

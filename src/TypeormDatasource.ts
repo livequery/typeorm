@@ -1,49 +1,51 @@
-import { FindManyOptions, getConnection, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm"
-import { QueryOption, UpdatedData } from '@livequery/types'
+import { FindManyOptions, getConnection, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, getConnectionOptions, Connection } from "typeorm"
+import { QueryOption, UpdatedData, QueryData } from '@livequery/types'
 import { Subject, fromEvent } from "rxjs"
-import { filter, mergeMap } from 'rxjs/operators'
+import { filter, mergeMap, tap } from 'rxjs/operators'
 import { Cursor } from "./Cursor"
-import createPostgresSubscriber from "pg-listen"
+import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { PostgresDataChangePayload } from "./PostgresDataChangePayload"
-import { CreateTableTrigger } from "./CreateTableTrigger"
-import { waitFor } from "./waitFor"
+import { CreateTableTriggerSqlBuilder } from "./CreateTableTriggerSqlBuilder"
+import { PostgresConnectionOptions } from "typeorm/driver/postgres/PostgresConnectionOptions"
+import { CreateUpdateListenerSqlBuilder } from "./CreateUpdateListenerSqlBuilder"
 
 
 
 export class TypeormDatasource {
 
-    private readonly changes = new Subject<UpdatedData<any>>()
+    readonly changes = new Subject<UpdatedData<any>>()
 
     private refs_map = new Map<string, Repository<any>>()
-    private tables_map = new Map<string, Set<string>>()
+    private repositories_map = new Map<Repository<any>, Set<string>>()
 
-    constructor(list: Array<{ repository: Repository<any>, refs: string[] }>) {
+    constructor(list: Array<{ repository: Repository<any>, refs: string[] }> = []) {
 
         for (const { refs, repository } of list) {
-            const table_name = repository.metadata.tableName
-            if (this.tables_map.has(table_name)) this.tables_map.set(table_name, new Set())
-
             for (const ref of refs) {
                 const full_collection_ref = ref.replaceAll(':', '')
-                this.tables_map.get(table_name).add(full_collection_ref)
-
-                const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 1).join('/')
+                const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 0).join('/')
                 this.refs_map.set(short_collection_ref, repository)
+
+                if (!this.repositories_map.has(repository)) this.repositories_map.set(repository, new Set())
+                this.repositories_map.get(repository).add(full_collection_ref)
             }
         }
     }
 
-    async query(ref: string, keys: object, options: QueryOption<any>) {
+    async query(ref: string, keys: object, options: QueryOption<any>): Promise<QueryData> {
+
         const query_params: FindManyOptions = {
             where: {
-                created_at: options._sort == 'asc' ? MoreThan(0) : LessThan(Date.now())
+                ...keys
             },
             take: options._limit + 1,
-            order: {
-                created_at: 'DESC',
-                [options._order_by]: options._sort.toUpperCase() as 1 | "DESC" | "ASC" | -1
-            },
-            select: (options as any)._select as string[],
+            ...options._order_by ? {
+                order: {
+                    created_at: 'DESC',
+                    [options._order_by]: options._sort?.toUpperCase() as 1 | "DESC" | "ASC" | -1
+                }
+            } : {},
+            ...options._select ? { select: (options as any)._select as string[] } : {},
         }
 
         const mapper = {
@@ -69,7 +71,7 @@ export class TypeormDatasource {
 
         const refs = ref.split('/')
         const is_collection = refs.length % 2 == 1
-        const collection_ref = refs.filter((_, i) => i % 2 == 1).join('/')
+        const collection_ref = refs.filter((_, i) => i % 2 == 0).join('/')
         const repository = this.refs_map.get(collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', ref, collection_ref }
         const filters = { ...query_params, ...keys }
@@ -77,14 +79,12 @@ export class TypeormDatasource {
 
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)
-        const cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string]) : null
+        const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string]) : null
 
         return {
             data: {
                 items,
-                count: items.length,
-                has_more,
-                cursor
+                paging: { has_more, next_cursor }
             }
         }
     }
@@ -94,31 +94,51 @@ export class TypeormDatasource {
         if (this.postgres_listening) return
         this.postgres_listening = true
 
-        // Create listener  
-        const { options: { database, host, port, username, password } } = await waitFor(getConnection) as any
-        const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
-        await subscriber.connect()
-        await subscriber.listenTo('realtime_update')
-        fromEvent<PostgresDataChangePayload<any>>(subscriber.notifications, 'realtime_update')
-            .pipe(
-                filter(payload => !!payload.data && this.tables_map.has(payload.table)),
-                mergeMap(payload => {
-                    const refs = this.tables_map.get(payload.table)
-                    return [...refs].map(paths => {
-                        const doc = ({ ...payload.new || {}, ...payload.old || {} })
-                        const ref = paths.split('/').map((key, i) => i % 2 == 1 ? key : doc[key]).join('/')
-                        return { ...payload.data, ref }
-                    })
-                })
-            )
-            .subscribe(this.changes)
+        const subscribers = new Map<Connection, Subscriber>()
 
-        // Create trigger
-        for (const [ref, { repository }] of Object.entries(this.tables_map)) {
+        const repositories = new Set([...this.refs_map.values()])
+        for (const repository of repositories) {
+
+            // Get connection
+            const connection = repository.metadata.connection
+
+            const { database, host, port, username, password } = connection.options as PostgresConnectionOptions
+            const subscriber = subscribers.get(connection) || createPostgresSubscriber({ host, port, user: username, password, database })
+            subscribers.set(connection, subscriber)
+
+            // Connect 
+            await subscriber.connect()
+
+            // Setup 
+            await subscriber.listenTo('realtime_update')
+            fromEvent<PostgresDataChangePayload<any>>(subscriber.notifications, 'realtime_update')
+                .pipe(
+                    filter(payload => !!payload.data),
+                    mergeMap(({ refs, type, id, data: updated_values = {}, doc }) => {
+                        const data = { id, ...updated_values }
+                        if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
+                        if (type == 'modified') return refs.reduce((p, { old_ref, ref }) => {
+                            if (old_ref == ref) {
+                                p.push({ data, ref, type })
+                            } else {
+                                p.push({ data: null, ref: old_ref, type: 'removed' })
+                                p.push({ data: doc, ref, type: 'added' })
+                            }
+                            return p
+                        }, [] as UpdatedData[])
+                        return []
+                    })
+                )
+                .subscribe(this.changes)
+
+            // Create trigger
             const table_name = repository.metadata.tableName
-            const script = CreateTableTrigger.replaceAll('__TABLE__', table_name)
-            repository.query(script)
+            await connection.query(CreateUpdateListenerSqlBuilder(table_name, [... this.repositories_map.get(repository)]))
+            repository.query(CreateTableTriggerSqlBuilder(table_name))
+
         }
+
+
     }
 
 }
