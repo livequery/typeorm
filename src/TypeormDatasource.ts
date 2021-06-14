@@ -50,13 +50,15 @@ export class TypeormDatasource {
 
         const mapper = {
             eq: (key: string, value: any) => query_params.where[key] = value,
-            like: (key: string, value: any) => query_params.where[key] = Like(value),
             ne: (key: string, value: any) => query_params.where[key] = Not(value),
             lt: (key: string, value: any) => query_params.where[key] = LessThan(value),
             lte: (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
             gt: (key: string, value: any) => query_params.where[key] = MoreThan(value),
             gte: (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
-            in: (key: string, value: any) => query_params.where[key] = In(value),
+            'in-array': (key: string, value: any) => query_params.where[key] = In(value),
+            'not-in-array': (key: string, value: any) => query_params.where[key] = Not(In(value)),
+            like: (key: string, value: any) => query_params.where[key] = Like(value),
+            
         }
 
         for (const [expression, key, value] of options.filters) {
@@ -115,19 +117,19 @@ export class TypeormDatasource {
                 .pipe(
                     filter(payload => !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, doc }) => {
-                        const data = { id, ...updated_values }
+                        const data = { id, ...updated_values || {} }
                         if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
                         if (type == 'modified') return refs.reduce((p, { old_ref, ref }) => {
                             if (old_ref == ref) {
                                 p.push({ data, ref, type })
                             } else {
-                                p.push({ data: null, ref: old_ref, type: 'removed' })
+                                p.push({ data: { id: doc.id }, ref: old_ref, type: 'removed' })
                                 p.push({ data: doc, ref, type: 'added' })
                             }
                             return p
                         }, [] as UpdatedData[])
                         return []
-                    })
+                    }) 
                 )
                 .subscribe(this.changes)
 
