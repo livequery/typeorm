@@ -18,17 +18,15 @@ export class TypeormDatasource {
     private refs_map = new Map<string, Repository<any>>()
     private repositories_map = new Map<Repository<any>, Set<string>>()
 
-    constructor(list: Array<{ repository: Repository<any>, refs: string[] }> = []) {
+    constructor(list: Array<{ repository: Repository<any>, ref: string }> = []) {
 
-        for (const { refs, repository } of list) {
-            for (const ref of refs) {
-                const full_collection_ref = ref.replaceAll(':', '')
-                const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 0).join('/')
-                this.refs_map.set(short_collection_ref, repository)
+        for (const { ref, repository } of list) {
+            const full_collection_ref = ref.replaceAll(':', '')
+            const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 0).join('/')
+            this.refs_map.set(short_collection_ref, repository)
 
-                if (!this.repositories_map.has(repository)) this.repositories_map.set(repository, new Set())
-                this.repositories_map.get(repository).add(full_collection_ref)
-            }
+            if (!this.repositories_map.has(repository)) this.repositories_map.set(repository, new Set())
+            this.repositories_map.get(repository).add(full_collection_ref)
         }
     }
 
@@ -58,7 +56,7 @@ export class TypeormDatasource {
             'in-array': (key: string, value: any) => query_params.where[key] = In(value),
             'not-in-array': (key: string, value: any) => query_params.where[key] = Not(In(value)),
             like: (key: string, value: any) => query_params.where[key] = Like(value),
-            
+
         }
 
         for (const [expression, key, value] of options.filters) {
@@ -129,7 +127,7 @@ export class TypeormDatasource {
                             return p
                         }, [] as UpdatedData[])
                         return []
-                    }) 
+                    })
                 )
                 .subscribe(this.changes)
 
