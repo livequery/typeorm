@@ -14,7 +14,8 @@
     "lib": [
       "esnext.asynciterable",
       "dom",
-      "ESNext.String"
+      "ESNext.String",
+      "ESNext.Array"
     ]
   },
   "exclude": [

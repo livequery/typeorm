@@ -1,13 +1,13 @@
 import { FindManyOptions, getConnection, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, getConnectionOptions, Connection } from "typeorm"
 import { QueryOption, UpdatedData, QueryData } from '@livequery/types'
-import { Subject, fromEvent } from "rxjs"
+import { Subject, fromEvent, async } from "rxjs"
 import { filter, mergeMap, tap } from 'rxjs/operators'
 import { Cursor } from "./Cursor"
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { PostgresDataChangePayload } from "./PostgresDataChangePayload"
-import { CreateTableTriggerSqlBuilder } from "./CreateTableTriggerSqlBuilder"
+import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder"
 import { PostgresConnectionOptions } from "typeorm/driver/postgres/PostgresConnectionOptions"
-import { CreateUpdateListenerSqlBuilder } from "./CreateUpdateListenerSqlBuilder"
+import { CreateUpdateListenerSqlBuilder } from "./sql/CreateUpdateListenerSqlBuilder"
 
 
 
