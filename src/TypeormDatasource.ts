@@ -1,14 +1,13 @@
-import { FindManyOptions, getConnection, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, getConnectionOptions, Connection } from "typeorm"
-import { QueryOption, UpdatedData, QueryData } from '@livequery/types'
-import { Subject, fromEvent, async } from "rxjs"
-import { filter, mergeMap, tap } from 'rxjs/operators'
+import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between } from "typeorm"
+import { UpdatedData, QueryData, LivequeryRequest } from '@livequery/types'
+import { Subject, fromEvent } from "rxjs"
+import { filter, mergeMap } from 'rxjs/operators'
 import { Cursor } from "./Cursor"
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
-import { PostgresDataChangePayload } from "./PostgresDataChangePayload"
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder"
 import { PostgresConnectionOptions } from "typeorm/driver/postgres/PostgresConnectionOptions"
 import { CreateUpdateListenerSqlBuilder } from "./sql/CreateUpdateListenerSqlBuilder"
-
+import { PostgresDataChangePayload } from "./PostgresDataChangePayload"
 
 
 export class TypeormDatasource {
@@ -30,56 +29,64 @@ export class TypeormDatasource {
         }
     }
 
-    async query(ref: string, keys: object, options: QueryOption<any>): Promise<QueryData> {
+    async query(query: LivequeryRequest): Promise<QueryData> {
+
+        const { ref, is_collection, collection_ref, options, keys } = query
 
         const query_params: FindManyOptions = {
             where: {
                 ...keys
             },
             take: options._limit + 1,
-            ...options._order_by ? {
-                order: {
-                    created_at: 'DESC',
+            order: {
+                created_at: 'DESC',
+                ...options._order_by ? {
                     [options._order_by]: options._sort?.toUpperCase() as 1 | "DESC" | "ASC" | -1
-                }
-            } : {},
+                } : {},
+            },
+
             ...options._select ? { select: (options as any)._select as string[] } : {},
         }
 
         const mapper = {
-            eq: (key: string, value: any) => query_params.where[key] = value,
-            ne: (key: string, value: any) => query_params.where[key] = Not(value),
-            lt: (key: string, value: any) => query_params.where[key] = LessThan(value),
-            lte: (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
-            gt: (key: string, value: any) => query_params.where[key] = MoreThan(value),
-            gte: (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
-            'in-array': (key: string, value: any) => query_params.where[key] = In(value),
-            'not-in-array': (key: string, value: any) => query_params.where[key] = Not(In(value)),
+            '==': (key: string, value: any) => query_params.where[key] = value,
+            '!=': (key: string, value: any) => query_params.where[key] = Not(value),
+            '<': (key: string, value: any) => query_params.where[key] = LessThan(value),
+            '<=': (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
+            '>': (key: string, value: any) => query_params.where[key] = MoreThan(value),
+            '>=': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
+            'contains': (key: string, value: any) => query_params.where[key] = In(value),
+            'not-contains': (key: string, value: any) => query_params.where[key] = Not(In(value)),
             like: (key: string, value: any) => query_params.where[key] = Like(value),
-
+            between: (key: string, [a, b]: [number, number]) => query_params.where[key] = Between(a, b)
         }
 
-        for (const [expression, key, value] of options.filters) {
-            mapper[expression as string] && mapper[expression as string](key, value)
+
+
+        for (const [key, expression, value] of options.filters) {
+            const fn = mapper[expression as string]
+            fn && fn(key, value)
         }
 
 
         if (options._cursor) {
-            const value = Cursor.decode(options._cursor)
-            query_params.where[options._order_by as string] = options._sort == 'asc' ? MoreThan(value) : LessThan(value)
+            const value = Cursor.decode(options._cursor || Date.now())
+            query_params.where[options._order_by as string || 'created_at'] = options._sort == 'asc' ? MoreThan(value) : LessThan(value)
         }
 
-        const refs = ref.split('/')
-        const is_collection = refs.length % 2 == 1
-        const collection_ref = refs.filter((_, i) => i % 2 == 0).join('/')
         const repository = this.refs_map.get(collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', ref, collection_ref }
         const filters = { ...query_params, ...keys }
-        const data = is_collection ? await repository.find(filters) : [await repository.findOne(filters)]
 
+        if (!is_collection) {
+            const data = await repository.findOne(filters)
+            return { data }
+        }
+
+        const data = await repository.find(filters)
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)
-        const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string]) : null
+        const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string || 'created_at']) : null
 
         return {
             data: {
@@ -91,27 +98,57 @@ export class TypeormDatasource {
 
     private postgres_listening = false
     async active_postgres_sync() {
+
         if (this.postgres_listening) return
         this.postgres_listening = true
 
-        const subscribers = new Map<Connection, Subscriber>()
+        const subscribers = new Map<Connection, {
+            subscriber: Subscriber,
+            tables: Map<string, {
+                function_name: string,
+                repository: Repository<any>
+            }>
+        }>()
 
-        const repositories = new Set([...this.refs_map.values()])
-        for (const repository of repositories) {
+        // Init subscribers
+        for (const repository of new Set([...this.refs_map.values()])) {
 
-            // Get connection
             const connection = repository.metadata.connection
 
-            const { database, host, port, username, password } = connection.options as PostgresConnectionOptions
-            const subscriber = subscribers.get(connection) || createPostgresSubscriber({ host, port, user: username, password, database })
-            subscribers.set(connection, subscriber)
+            if (!subscribers.has(connection)) {
+                const { database, host, port, username, password } = connection.options as PostgresConnectionOptions
+                const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
+                await subscriber.connect()
+                subscribers.set(connection, {
+                    subscriber,
+                    tables: new Map()
+                })
+            }
 
-            // Connect 
-            await subscriber.connect()
+            const { tables } = subscribers.get(connection)
 
-            // Setup 
-            await subscriber.listenTo('realtime_update')
-            fromEvent<PostgresDataChangePayload<any>>(subscriber.notifications, 'realtime_update')
+            const table_name = repository.metadata.tableName
+            const function_name = `listen_update_for_${table_name.replaceAll('-', '_')}`
+            if (!tables.has(table_name)) {
+                tables.set(table_name, { function_name, repository })
+            }
+        }
+
+        // Active listeners
+        for (const [connection, { subscriber, tables }] of subscribers) {
+
+            for (const [table_name, { function_name, repository }] of tables) {
+
+                const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, [... this.repositories_map.get(repository)])
+                await repository.query(CreateUpdateListenerCMD)
+
+                const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
+                await repository.query(CreateTableTriggerCMD)
+
+
+            }
+            await subscriber.listenTo('realtime_sync')
+            fromEvent<PostgresDataChangePayload>(subscriber.notifications, 'realtime_sync')
                 .pipe(
                     filter(payload => !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, doc }) => {
@@ -131,13 +168,8 @@ export class TypeormDatasource {
                 )
                 .subscribe(this.changes)
 
-            // Create trigger
-            const table_name = repository.metadata.tableName
-            await connection.query(CreateUpdateListenerSqlBuilder(table_name, [... this.repositories_map.get(repository)]))
-            repository.query(CreateTableTriggerSqlBuilder(table_name))
 
         }
-
 
     }
 

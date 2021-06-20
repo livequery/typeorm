@@ -1,9 +1,9 @@
 const ref_builder = (from: string, ref: string) => ref.split('/').map((key, i, { length }) => i % 2 == 0 ? `'${i == 0 ? '' : '/'}${key}${i == length - 1 ? '' : '/'}'` : `${from}.${key}`).join(' || ')
 
-export const CreateUpdateListenerSqlBuilder = (table: string, refs: string[]) => `
+export const CreateUpdateListenerSqlBuilder = (function_name: string, refs: string[]) => `
 
       
-      CREATE OR REPLACE FUNCTION realtime_update_for_${table}() RETURNS trigger AS $trigger$
+      CREATE OR REPLACE FUNCTION ${function_name}() RETURNS trigger AS $trigger$
       DECLARE
         updated_values jsonb;
         doc jsonb;
@@ -40,7 +40,7 @@ export const CreateUpdateListenerSqlBuilder = (table: string, refs: string[]) =>
             END CASE; 
       
             PERFORM pg_notify(
-                  'realtime_update', 
+                  'realtime_sync', 
                   json_build_object(
                         'type' ,   type,
                         'id'   ,   id, 
