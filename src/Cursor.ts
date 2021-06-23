@@ -4,6 +4,10 @@ export const Cursor = {
     },
 
     decode(v: string) {
-        return JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as number
+        try{
+            return JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as number
+        }catch(e){
+            throw 'INVAILD_CURSOR'
+        }
     }
 }
