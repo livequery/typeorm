@@ -31,7 +31,7 @@ export class TypeormDatasource {
 
     async query(query: LivequeryRequest): Promise<QueryData> {
 
-        const { ref, is_collection, collection_ref, options, keys } = query
+        const { ref, is_collection, collection_ref, options, keys, filters } = query
 
         const query_params: FindManyOptions = {
             where: {
@@ -63,7 +63,7 @@ export class TypeormDatasource {
 
 
 
-        for (const [key, expression, value] of options.filters) {
+        for (const [key, expression, value] of filters) {
             const fn = mapper[expression as string]
             fn && fn(key, value)
         }
@@ -76,14 +76,14 @@ export class TypeormDatasource {
 
         const repository = this.refs_map.get(collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', ref, collection_ref }
-        const filters = { ...query_params, ...keys }
+        const conditions = { ...query_params, ...keys }
 
         if (!is_collection) {
-            const data = await repository.findOne(filters)
+            const data = await repository.findOne(conditions)
             return { data }
         }
 
-        const data = await repository.find(filters)
+        const data = await repository.find(conditions)
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)
         const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string || 'created_at']) : null
