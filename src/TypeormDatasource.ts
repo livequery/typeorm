@@ -150,7 +150,7 @@ export class TypeormDatasource {
             await subscriber.listenTo('realtime_sync')
             fromEvent<PostgresDataChangePayload>(subscriber.notifications, 'realtime_sync')
                 .pipe(
-                    filter(payload => !!payload.data),
+                    filter(payload => payload.type == 'removed' || !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, doc }) => {
                         const data = { id, ...updated_values || {} }
                         if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
