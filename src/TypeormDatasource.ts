@@ -31,7 +31,7 @@ export class TypeormDatasource {
 
     async query(query: LivequeryRequest): Promise<QueryData> {
 
-        const { ref, is_collection, collection_ref, options, keys, filters } = query
+        const { ref, is_collection, schema_collection_ref, options, keys, filters } = query
 
         const query_params: FindManyOptions = {
             where: {
@@ -74,8 +74,8 @@ export class TypeormDatasource {
             query_params.where[options._order_by as string || 'created_at'] = options._sort == 'asc' ? MoreThan(value) : LessThan(value)
         }
 
-        const repository = this.refs_map.get(collection_ref)
-        if (!repository) throw { code: 'REF_NOT_FOUND', ref, collection_ref }
+        const repository = this.refs_map.get(schema_collection_ref)
+        if (!repository) throw { code: 'REF_NOT_FOUND', ref, schema_collection_ref }
         const conditions = { ...query_params, ...keys }
 
         if (!is_collection) {

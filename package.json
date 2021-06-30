@@ -3,7 +3,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.14",
+    "version": "1.0.15",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
@@ -11,8 +11,8 @@
         "build/**/*"
     ],
     "dependencies": {
-        "@livequery/nestjs": "^1.0.6",
-        "@livequery/types": "^1.0.19",
+        "@livequery/nestjs": "^1.0.15",
+        "@livequery/types": "^1.0.25",
         "pg": "^8.5.1",
         "pg-listen": "^1.7.0",
         "rxjs": "^7.1.0",
