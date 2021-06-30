@@ -79,7 +79,7 @@ export class TypeormDatasource {
         const conditions = { ...query_params, ...keys }
 
         if (!is_collection) {
-            const data = await repository.findOne(conditions)
+            const data = await repository.findOne(conditions) ?? null 
             return { data }
         }
 
