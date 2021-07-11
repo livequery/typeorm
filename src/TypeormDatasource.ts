@@ -29,7 +29,7 @@ export class TypeormDatasource {
         }
     }
 
-    async query(query: LivequeryRequest): Promise<QueryData> {
+    async query(query: LivequeryRequest) {
 
         const { ref, is_collection, schema_collection_ref, options, keys, filters } = query
 
@@ -79,8 +79,8 @@ export class TypeormDatasource {
         const conditions = { ...query_params, ...keys }
 
         if (!is_collection) {
-            const data = await repository.findOne(conditions) ?? null 
-            return { data }
+            const data = await repository.findOne(conditions) ?? null
+            return data
         }
 
         const data = await repository.find(conditions)
@@ -89,10 +89,8 @@ export class TypeormDatasource {
         const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string || 'created_at']) : null
 
         return {
-            data: {
-                items,
-                paging: { has_more, next_cursor }
-            }
+            items,
+            paging: { has_more, next_cursor }
         }
     }
 
