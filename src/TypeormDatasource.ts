@@ -1,7 +1,7 @@
 import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between } from "typeorm"
-import { UpdatedData, QueryData, LivequeryRequest } from '@livequery/types'
+import { UpdatedData, LivequeryRequest } from '@livequery/types'
 import { Subject, fromEvent } from "rxjs"
-import { filter, mergeMap } from 'rxjs/operators'
+import { filter, mergeMap, tap } from 'rxjs/operators'
 import { Cursor } from "./Cursor"
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder"
@@ -14,11 +14,12 @@ export class TypeormDatasource {
 
     readonly changes = new Subject<UpdatedData<any>>()
 
-    private refs_map = new Map<string, Repository<any>>()
-    private repositories_map = new Map<Repository<any>, Set<string>>()
+    private refs_map = new Map<string, Repository<any>>() // Short schema => table for query
+    private repositories_map = new Map<Repository<any>, Set<string>>() // Full table => full uri key schema for sync
 
+
+    // Construct with full schema and uri key name
     constructor(list: Array<{ repository: Repository<any>, ref: string }> = []) {
-
         for (const { ref, repository } of list) {
             const full_collection_ref = ref.replaceAll(':', '')
             const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 0).join('/')
@@ -149,15 +150,15 @@ export class TypeormDatasource {
             fromEvent<PostgresDataChangePayload>(subscriber.notifications, 'realtime_sync')
                 .pipe(
                     filter(payload => payload.type == 'removed' || !!payload.data),
-                    mergeMap(({ refs, type, id, data: updated_values = {}, doc }) => {
+                    mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
                         const data = { id, ...updated_values || {} }
                         if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
                         if (type == 'modified') return refs.reduce((p, { old_ref, ref }) => {
                             if (old_ref == ref) {
                                 p.push({ data, ref, type })
                             } else {
-                                p.push({ data: { id: doc.id }, ref: old_ref, type: 'removed' })
-                                p.push({ data: doc, ref, type: 'added' })
+                                p.push({ data: { id: new_doc.id }, ref: old_ref, type: 'removed' })
+                                p.push({ data: new_doc, ref, type: 'added' })
                             }
                             return p
                         }, [] as UpdatedData[])

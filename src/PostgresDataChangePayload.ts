@@ -3,5 +3,5 @@ export type PostgresDataChangePayload<T = any> = {
     type: 'added' | 'modified' | 'removed'
     data: T
     refs: Array<{ ref: string, old_ref: string }>
-    doc: T
+    new_doc: T
 }

@@ -6,7 +6,7 @@ export const CreateUpdateListenerSqlBuilder = (function_name: string, refs: stri
       CREATE OR REPLACE FUNCTION ${function_name}() RETURNS trigger AS $trigger$
       DECLARE
         updated_values jsonb;
-        doc jsonb;
+        new_doc jsonb;
         id text;
         type text;
         refs json[];
@@ -31,7 +31,7 @@ export const CreateUpdateListenerSqlBuilder = (function_name: string, refs: stri
                   WHERE n.value IS DISTINCT FROM o.value; 
                   id := NEW.id;
                   type := 'modified'; 
-                  doc := to_jsonb(NEW); 
+                  new_doc := to_jsonb(NEW); 
             WHEN 'DELETE' THEN 
                   id := OLD.id;
                   type := 'removed';
@@ -42,11 +42,11 @@ export const CreateUpdateListenerSqlBuilder = (function_name: string, refs: stri
             PERFORM pg_notify(
                   'realtime_sync', 
                   json_build_object(
-                        'type' ,   type,
-                        'id'   ,   id, 
-                        'data' ,   updated_values,
-                        'refs' ,   refs,
-                        'doc'  ,   doc
+                        'type'     ,   type,
+                        'id'       ,   id, 
+                        'data'     ,   updated_values,
+                        'refs'     ,   refs,
+                        'new_doc'  ,   new_doc
                   )::text
             );
         
