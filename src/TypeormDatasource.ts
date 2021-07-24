@@ -50,13 +50,13 @@ export class TypeormDatasource {
         }
 
         const mapper = {
-            '==': (key: string, value: any) => query_params.where[key] = value,
-            '!=': (key: string, value: any) => query_params.where[key] = Not(value),
-            '<': (key: string, value: any) => query_params.where[key] = LessThan(value),
-            '<=': (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
-            '>': (key: string, value: any) => query_params.where[key] = MoreThan(value),
-            '>=': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
-            'contains': (key: string, value: any) => query_params.where[key] = In(value),
+            'eq': (key: string, value: any) => query_params.where[key] = value,
+            'ne': (key: string, value: any) => query_params.where[key] = Not(value),
+            'lt': (key: string, value: any) => query_params.where[key] = LessThan(value),
+            'lte': (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
+            'gt': (key: string, value: any) => query_params.where[key] = MoreThan(value),
+            'gte': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
+            contains: (key: string, value: any) => query_params.where[key] = In(value),
             'not-contains': (key: string, value: any) => query_params.where[key] = Not(In(value)),
             like: (key: string, value: any) => query_params.where[key] = Like(value),
             between: (key: string, [a, b]: [number, number]) => query_params.where[key] = Between(a, b)
