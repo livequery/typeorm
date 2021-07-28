@@ -1,4 +1,4 @@
-import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between } from "typeorm"
+import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between, ILike } from "typeorm"
 import { UpdatedData, LivequeryRequest } from '@livequery/types'
 import { Subject, fromEvent } from "rxjs"
 import { filter, mergeMap, tap } from 'rxjs/operators'
@@ -58,16 +58,16 @@ export class TypeormDatasource {
             'gte': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
             contains: (key: string, value: any) => query_params.where[key] = In(value),
             'not-contains': (key: string, value: any) => query_params.where[key] = Not(In(value)),
-            like: (key: string, value: any) => query_params.where[key] = Like(value),
             between: (key: string, [a, b]: [number, number]) => query_params.where[key] = Between(a, b)
         }
-
 
 
         for (const [key, expression, value] of filters) {
             const fn = mapper[expression as string]
             fn && fn(key, value)
         }
+
+
 
 
         if (options._cursor) {
@@ -77,14 +77,24 @@ export class TypeormDatasource {
 
         const repository = this.refs_map.get(schema_collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', ref, schema_collection_ref }
-        const conditions = { ...query_params, ...keys }
 
+        // Add like expression
+        const like_expressions = filters.filter(f => f[1] == 'like')
+        if (like_expressions.length > 0) {
+            query_params.where = like_expressions.map(([key, _, value]) => ({
+                [key]: ILike(value),
+                ...query_params.where as any
+            }))
+        }
+
+        // Document query
         if (!is_collection) {
-            const data = await repository.findOne(conditions) ?? null
+            const data = await repository.findOne(query_params) ?? null
             return data
         }
 
-        const data = await repository.find(conditions)
+        // Collection query
+        const data = await repository.find(query_params)
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)
         const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string || 'created_at']) : null
