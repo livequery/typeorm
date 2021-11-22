@@ -2,7 +2,7 @@ const ref_builder = (from: string, ref: string) => ref.split('/').map((key, i, {
 
 export const CreateUpdateListenerSqlBuilder = (function_name: string, list_refs: string[]) => {
 
-      const refs = list_refs.filter(r => r.split('/').length % 2 != 1)
+      const refs = list_refs.filter(r => r.split('/').length % 2 != 0)
 
 
       return `

@@ -1,7 +1,7 @@
 import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between, ILike } from "typeorm"
 import { UpdatedData, LivequeryRequest } from '@livequery/types'
 import { Subject, fromEvent } from "rxjs"
-import { filter, mergeMap, tap } from 'rxjs/operators'
+import { filter, mergeMap } from 'rxjs/operators'
 import { Cursor } from "./Cursor"
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder"
