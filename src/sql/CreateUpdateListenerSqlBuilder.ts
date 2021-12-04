@@ -7,7 +7,6 @@ export const CreateUpdateListenerSqlBuilder = (function_name: string, list_refs:
 
       return `
 
-      
       CREATE OR REPLACE FUNCTION ${function_name}() RETURNS trigger AS $trigger$
       DECLARE
         updated_values jsonb;

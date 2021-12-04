@@ -6,23 +6,27 @@
     "allowSyntheticDefaultImports": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "target": "es2017",
+    "target": "ESNext",
     "sourceMap": false,
     "outDir": "./build",
     "incremental": false,
     "rootDir": ".",
+    "useDefineForClassFields": true,
     "lib": [
       "esnext.asynciterable",
       "dom",
       "ESNext.String",
-      "ESNext.Array"
-    ]
+      "ESNext.Array",
+      "ES2019"
+    ],
+    "importHelpers": true
   },
   "exclude": [
     "node_modules",
     "out",
     "src/schema.ts",
     "bin",
-    "build"
-  ]
+    "./build/**/*",
+    "*.d.ts"
+  ] 
 }

@@ -1,38 +1,57 @@
-import { FindManyOptions, In, LessThan, LessThanOrEqual, Like, MoreThan, MoreThanOrEqual, Not, Repository, Connection, Between, ILike } from "typeorm"
-import { UpdatedData, LivequeryRequest } from '@livequery/types'
-import { Subject, fromEvent } from "rxjs"
-import { filter, mergeMap } from 'rxjs/operators'
-import { Cursor } from "./Cursor"
+import { LivequeryRequest, UpdatedData } from '@livequery/types'
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
+import { fromEvent, Subject } from "rxjs"
+import { filter, mergeMap, map, tap } from 'rxjs/operators'
+import { Between, Connection, EntityTarget, FindManyOptions, getConnectionManager, getMetadataArgsStorage, getRepository, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm"
+import { Cursor } from "./helpers/Cursor"
+import { DataChangePayload } from "./DataChangePayload"
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder"
-import { PostgresConnectionOptions } from "typeorm/driver/postgres/PostgresConnectionOptions"
 import { CreateUpdateListenerSqlBuilder } from "./sql/CreateUpdateListenerSqlBuilder"
-import { PostgresDataChangePayload } from "./PostgresDataChangePayload"
+import { v4 } from 'uuid'
+import { JsonUtil } from './helpers/JsonUtil'
 
 
 export class TypeormDatasource {
 
-    readonly changes = new Subject<UpdatedData<any>>()
+    public readonly changes = new Subject<UpdatedData<any>>()
+    #refs_map = new Map<string, Repository<any>>()// Short schema => table for query
+    #repositories_map = new Map<Repository<any>, Set<string>>() // Full table => full uri key schema for sync
 
-    private refs_map = new Map<string, Repository<any>>() // Short schema => table for query
-    private repositories_map = new Map<Repository<any>, Set<string>>() // Full table => full uri key schema for sync
 
+    async register<T = any>(schema_ref: string, entity: EntityTarget<T>, connection: string = 'default') {
 
-    // Construct with full schema and uri key name
-    constructor(list: Array<{ repository: Repository<any>, ref: string }> = []) {
-        for (const { ref, repository } of list) {
-            const full_collection_ref = ref.replaceAll(':', '')
-            const short_collection_ref = full_collection_ref.split('/').filter((r, i) => i % 2 == 0).join('/')
-            this.refs_map.set(short_collection_ref, repository)
+        if (schema_ref.match(/[^\-_a-zA-Z0-9\/:]+/)) throw new Error(
+            `Don't use special chars in livequery ref "${schema_ref}"`
+        )
 
-            if (!this.repositories_map.has(repository)) this.repositories_map.set(repository, new Set())
-            this.repositories_map.get(repository).add(full_collection_ref)
-        }
+        const collection_ref = schema_ref.split('/').filter((_, i) => i % 2 == 0).join('/')
+
+        // Load repository
+        const repository = await getRepository(entity, connection)
+
+        // Add to paths
+        this.#refs_map.set(schema_ref, repository)
+
+        // Add to repo
+        !this.#repositories_map.has(repository) && this.#repositories_map.set(repository, new Set())
+        this.#repositories_map.get(repository).add(collection_ref)
     }
 
     async query(query: LivequeryRequest) {
 
-        const { ref, is_collection, schema_collection_ref, options, keys, filters } = query
+        const repository = this.#refs_map.get(query.schema_collection_ref)
+        if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
+
+
+        if (query.method == 'get') return this.#excute_get(repository, query)
+        if (query.method == 'post') return this.#excute_post(repository, query)
+        if (query.method == 'put') return this.#excute_put(repository, query)
+        if (query.method == 'patch') return this.#excute_patch(repository, query)
+        if (query.method == 'del') return this.#excute_del(repository, query)
+    }
+
+    async #excute_get(repository: Repository<any>, query: LivequeryRequest) {
+        const { is_collection, options, keys, filters } = query
 
         const query_params: FindManyOptions = {
             where: {
@@ -56,8 +75,6 @@ export class TypeormDatasource {
             'lte': (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
             'gt': (key: string, value: any) => query_params.where[key] = MoreThan(value),
             'gte': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
-            contains: (key: string, value: any) => query_params.where[key] = In(value),
-            'not-contains': (key: string, value: any) => query_params.where[key] = Not(In(value)),
             between: (key: string, [a, b]: [number, number]) => query_params.where[key] = Between(a, b)
         }
 
@@ -75,8 +92,7 @@ export class TypeormDatasource {
             query_params.where[options._order_by as string || 'created_at'] = options._sort == 'asc' ? MoreThan(value) : LessThan(value)
         }
 
-        const repository = this.refs_map.get(schema_collection_ref)
-        if (!repository) throw { code: 'REF_NOT_FOUND', ref, schema_collection_ref }
+
 
         // Add like expression
         const like_expressions = filters.filter(f => f[1] == 'like')
@@ -105,11 +121,24 @@ export class TypeormDatasource {
         }
     }
 
-    private postgres_listening = false
-    async active_postgres_sync() {
+    async #excute_post(repository: Repository<any>, query: LivequeryRequest) {
+        const data = { id: v4(), ...query.body }
+        return await repository.save(data)
+    }
 
-        if (this.postgres_listening) return
-        this.postgres_listening = true
+    async #excute_put(repository: Repository<any>, query: LivequeryRequest) {
+        return await repository.update(query.keys, query.body)
+    }
+
+    async #excute_patch(repository: Repository<any>, query: LivequeryRequest) {
+        return await repository.update(query.keys, query.body)
+    }
+
+    async #excute_del(repository: Repository<any>, query: LivequeryRequest) {
+        return await repository.delete(query.keys)
+    }
+
+    async active_postgres_sync() {
 
         const subscribers = new Map<Connection, {
             subscriber: Subscriber,
@@ -120,12 +149,12 @@ export class TypeormDatasource {
         }>()
 
         // Init subscribers
-        for (const repository of new Set([...this.refs_map.values()])) {
+        for (const repository of new Set([...this.#refs_map.values()])) {
 
             const connection = repository.metadata.connection
 
             if (!subscribers.has(connection)) {
-                const { database, host, port, username, password } = connection.options as PostgresConnectionOptions
+                const { database, host, port, username, password } = connection.options as any
                 const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
                 await subscriber.connect()
                 subscribers.set(connection, {
@@ -144,24 +173,22 @@ export class TypeormDatasource {
         }
 
         // Active listeners
-        for (const [connection, { subscriber, tables }] of subscribers) {
+        for (const [_, { subscriber, tables }] of subscribers) {
 
             for (const [table_name, { function_name, repository }] of tables) {
 
-                const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, [... this.repositories_map.get(repository)])
+                const refs = [...this.#repositories_map.get(repository).values()]
+                const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
                 await repository.query(CreateUpdateListenerCMD)
-
                 const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
                 await repository.query(CreateTableTriggerCMD)
-
-
             }
             await subscriber.listenTo('realtime_sync')
-            fromEvent<PostgresDataChangePayload>(subscriber.notifications, 'realtime_sync')
+            fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
                 .pipe(
                     filter(payload => payload.type == 'removed' || !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
-                        const data = { id, ...updated_values || {} }
+                        const data = JsonUtil.deepJsonParse({ id, ...updated_values || {} })
                         if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
                         if (type == 'modified') return refs.reduce((p, { old_ref, ref }) => {
                             if (old_ref == ref) {
@@ -172,14 +199,13 @@ export class TypeormDatasource {
                             }
                             return p
                         }, [] as UpdatedData[])
-                        return []
+                        return [] as UpdatedData[]
                     })
                 )
                 .subscribe(this.changes)
-
-
         }
 
     }
 
 }
+

@@ -1,4 +1,4 @@
-export type PostgresDataChangePayload<T = any> = {
+export type DataChangePayload<T = any> = {
     id: string
     type: 'added' | 'modified' | 'removed'
     data: T
