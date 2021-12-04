@@ -174,14 +174,14 @@ export class TypeormDatasource {
 
         // Active listeners
         for (const [_, { subscriber, tables }] of subscribers) {
-
             for (const [table_name, { function_name, repository }] of tables) {
-
                 const refs = [...this.#repositories_map.get(repository).values()]
-                const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
-                await repository.query(CreateUpdateListenerCMD)
-                const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
-                await repository.query(CreateTableTriggerCMD)
+                if (refs.length > 0) {
+                    const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
+                    await repository.query(CreateUpdateListenerCMD)
+                    const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
+                    await repository.query(CreateTableTriggerCMD)
+                }
             }
             await subscriber.listenTo('realtime_sync')
             fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
