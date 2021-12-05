@@ -47,7 +47,7 @@ export class TypeormDatasource {
         if (query.method == 'post') return this.#excute_post(repository, query)
         if (query.method == 'put') return this.#excute_put(repository, query)
         if (query.method == 'patch') return this.#excute_patch(repository, query)
-        if (query.method == 'del') return this.#excute_del(repository, query)
+        if (query.method == 'delete') return this.#excute_del(repository, query)
     }
 
     async #excute_get(repository: Repository<any>, query: LivequeryRequest) {
