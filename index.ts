@@ -1,3 +1,2 @@
-export { UseTypeormDatasourceMetadata } from "./src/UseTypeormDatasourceMetadata";
-export { DataChangePayload } from './src/DataChangePayload'
-export { TypeormDatasource } from "./src/TypeormDatasource";
+export { UseTypeormDatasource } from './src/UseTypeormDatasource'
+export { TypeormDatasource } from './src/TypeormDatasource'

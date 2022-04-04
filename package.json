@@ -28,5 +28,9 @@
         "deploy": "yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish --access public"
     },
     "author": "",
-    "license": "ISC"
+    "license": "ISC",
+    "dependencies": {
+        "@nestjs/common": "^8.4.3",
+        "@nestjs/core": "^8.4.3"
+    }
 }

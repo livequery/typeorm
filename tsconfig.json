@@ -17,16 +17,20 @@
       "dom",
       "ESNext.String",
       "ESNext.Array",
-      "ES2019"
+      "ES2019",
+      "es2021",
+      "ESNext"
     ],
     "importHelpers": true
-  },
+  }, 
   "exclude": [
+    "build",
     "node_modules",
     "out",
     "src/schema.ts",
     "bin",
     "./build/**/*",
-    "*.d.ts"
-  ] 
+    "**/*/*.d.ts",
+    "target"
+  ]
 }
