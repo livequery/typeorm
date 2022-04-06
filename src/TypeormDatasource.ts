@@ -1,7 +1,6 @@
-import { applyDecorators, CallHandler, ExecutionContext, Injectable, NestInterceptor, Optional, Provider, SetMetadata, UseInterceptors } from "@nestjs/common";
-import { Between, Connection, FindManyOptions, getRepository, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
+import { Between, Connection, FindManyOptions, getConnection, getRepository, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
 import { LivequeryRequest, UpdatedData } from '@livequery/types'
-import { async, filter, fromEvent, mapTo, mergeMap, of, Subject } from "rxjs";
+import { filter, fromEvent, mergeMap, of, Subject } from "rxjs";
 import { DataChangePayload } from "./DataChangePayload";
 import { JsonUtil } from "./helpers/JsonUtil";
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder";
@@ -12,51 +11,47 @@ import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { ControllerList } from "./MetadataStorage";
 import { PathMapper } from "./helpers/PathMapper";
 
+const LIVEQUERY_MAGIC_KEY = `${process.env.LIVEQUERY_MAGIC_KEY || 'livequery'}/`
 
 
-
-@Injectable()
-export class TypeormDatasource implements NestInterceptor {
+export class TypeormDatasource   {
 
     #refs_map = new Map<string, Repository<any>>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
-
+    #id = v4()
     public readonly changes = new Subject()
 
-    constructor() { }
+      constructor() {
+        console.log(`Constrcutor [${this.#id}]`)
+     }
+ 
 
-    static forFoot(deps: any[] = []) {
-        return {
-            provide: TypeormDatasource,
-            useFactory: async () => {
-                const m = new this()
-                await m.init(deps)
-                return m
-            },
-            inject: deps
-        } as Provider
+    async init() {
 
-    }
+        console.log(`ID: [${this.#id }]`)
 
-    async  init(deps: Repository<any>[]) {
-        console.log({deps})
-        console.log({
-            data: await deps[0].find()
-        })
+
 
         const realtime_repositories: Repository<any>[] = []
+
+        for (const connection of new Set(ControllerList.map(c => c.connection || 'default'))) {
+            try { await getConnection(connection) } catch (e) {
+                throw new Error(`Database connection [${connection}] not found, please check TypeormDatasource dependencies (you can add one repository as dependency)`)
+            }
+        }
 
         for (const { connection = 'default', entity, method, target, realtime = false } of ControllerList) {
             for (const fullpath of PathMapper(
                 Reflect.getMetadata('path', target.constructor),
                 Reflect.getMetadata('path', target.constructor, method)
             )) {
+
                 const repository = this.#entities_map.get(entity) ?? await getRepository(entity, connection)
                 this.#entities_map.set(entity, repository)
+                if (!fullpath.includes(LIVEQUERY_MAGIC_KEY)) throw new Error(`Path "${fullpath}" doesn't includes "${LIVEQUERY_MAGIC_KEY}"`)
+                const ref = fullpath.split(LIVEQUERY_MAGIC_KEY)[1]
 
-                const ref = fullpath.split('livequery/')[1]
-                const collection_ref = ref.split('/').filter((_, i) => i % 2 == 1).join('/')
                 const schema_ref = ref.replaceAll(':', '')
 
 
@@ -65,35 +60,32 @@ export class TypeormDatasource implements NestInterceptor {
                     schema_ref
                 ]))
 
-                this.#refs_map.set(collection_ref, repository)
+                this.#refs_map.set(schema_ref, repository)
 
                 realtime && realtime_repositories.push(repository)
             }
         }
 
         await this.active_postgres_sync(realtime_repositories)
+
     }
 
-    async intercept(context: ExecutionContext, next: CallHandler) {
-        const req = context.switchToHttp().getRequest()
-        const data = await this.#query(req.livequery as LivequeryRequest)
-        return of(data)
-    }
+   
 
-    async #query(query: LivequeryRequest) {
-
+    async query(query: LivequeryRequest) {
+        console.log({query})
         const repository = this.#refs_map.get(query.schema_collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
 
 
-        if (query.method == 'get') return this.#excute_get(repository, query)
-        if (query.method == 'post') return this.#excute_post(repository, query)
-        if (query.method == 'put') return this.#excute_put(repository, query)
-        if (query.method == 'patch') return this.#excute_patch(repository, query)
-        if (query.method == 'delete') return this.#excute_del(repository, query)
+        if (query.method == 'get') return this.#get(repository, query)
+        if (query.method == 'post') return this.#post(repository, query)
+        if (query.method == 'put') return this.#put(repository, query)
+        if (query.method == 'patch') return this.#patch(repository, query)
+        if (query.method == 'delete') return this.#del(repository, query)
     }
 
-    async #excute_get(repository: Repository<any>, query: LivequeryRequest) {
+    async #get(repository: Repository<any>, query: LivequeryRequest) {
         const { is_collection, options, keys, filters } = query
 
         const query_params: FindManyOptions = {
@@ -164,20 +156,20 @@ export class TypeormDatasource implements NestInterceptor {
         }
     }
 
-    async #excute_post(repository: Repository<any>, query: LivequeryRequest) {
+    async #post(repository: Repository<any>, query: LivequeryRequest) {
         const data = { id: v4(), ...query.body }
         return await repository.save(data)
     }
 
-    async #excute_put(repository: Repository<any>, query: LivequeryRequest) {
+    async #put(repository: Repository<any>, query: LivequeryRequest) {
         return await repository.update(query.keys, query.body)
     }
 
-    async #excute_patch(repository: Repository<any>, query: LivequeryRequest) {
+    async #patch(repository: Repository<any>, query: LivequeryRequest) {
         return await repository.update(query.keys, query.body)
     }
 
-    async #excute_del(repository: Repository<any>, query: LivequeryRequest) {
+    async #del(repository: Repository<any>, query: LivequeryRequest) {
         return await repository.delete(query.keys)
     }
 
