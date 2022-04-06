@@ -10,30 +10,26 @@ import { v4 } from 'uuid'
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { ControllerList } from "./MetadataStorage";
 import { PathMapper } from "./helpers/PathMapper";
+import { applyDecorators, Injectable, NestInterceptor, UseInterceptors,Provider } from '@nestjs/common';
 
 const LIVEQUERY_MAGIC_KEY = `${process.env.LIVEQUERY_MAGIC_KEY || 'livequery'}/`
 
-
-export class TypeormDatasource   {
+@Injectable()
+export class TypeormDatasource {
 
     #refs_map = new Map<string, Repository<any>>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
     #id = v4()
+    #realtime_repositories: Repository<any>[] = []
     public readonly changes = new Subject()
 
-      constructor() {
-        console.log(`Constrcutor [${this.#id}]`)
-     }
- 
+    private constructor() { }
 
-    async init() {
-
-        console.log(`ID: [${this.#id }]`)
+    static async init() {
 
 
-
-        const realtime_repositories: Repository<any>[] = []
+        const datasource = new TypeormDatasource() 
 
         for (const connection of new Set(ControllerList.map(c => c.connection || 'default'))) {
             try { await getConnection(connection) } catch (e) {
@@ -47,33 +43,28 @@ export class TypeormDatasource   {
                 Reflect.getMetadata('path', target.constructor, method)
             )) {
 
-                const repository = this.#entities_map.get(entity) ?? await getRepository(entity, connection)
-                this.#entities_map.set(entity, repository)
+                const repository = datasource.#entities_map.get(entity) ?? await getRepository(entity, connection)
+                datasource.#entities_map.set(entity, repository)
                 if (!fullpath.includes(LIVEQUERY_MAGIC_KEY)) throw new Error(`Path "${fullpath}" doesn't includes "${LIVEQUERY_MAGIC_KEY}"`)
                 const ref = fullpath.split(LIVEQUERY_MAGIC_KEY)[1]
 
                 const schema_ref = ref.replaceAll(':', '')
 
 
-                this.#repositories_map.set(repository, new Set([
-                    ... (this.#repositories_map.get(repository) || []),
+                datasource.#repositories_map.set(repository, new Set([
+                    ... (datasource.#repositories_map.get(repository) || []),
                     schema_ref
                 ]))
-
-                this.#refs_map.set(schema_ref, repository)
-
-                realtime && realtime_repositories.push(repository)
+                datasource.#refs_map.set(schema_ref, repository)
+                realtime && datasource.#realtime_repositories.push(repository)
             }
         }
 
-        await this.active_postgres_sync(realtime_repositories)
-
+        return datasource
     }
 
-   
 
     async query(query: LivequeryRequest) {
-        console.log({query})
         const repository = this.#refs_map.get(query.schema_collection_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
 
@@ -136,7 +127,7 @@ export class TypeormDatasource   {
                 [key]: ILike(value),
                 ...query_params.where as any
             }))
-        }
+        } 
 
         // Document query
         if (!is_collection) {
@@ -173,7 +164,7 @@ export class TypeormDatasource   {
         return await repository.delete(query.keys)
     }
 
-    async active_postgres_sync(repositories: Repository<any>[]) {
+    async active_postgres_sync() {
 
         const subscribers = new Map<Connection, {
             subscriber: Subscriber,
@@ -184,7 +175,7 @@ export class TypeormDatasource   {
         }>()
 
         // Init subscribers
-        for (const repository of repositories) {
+        for (const repository of this.#realtime_repositories) {
 
             const connection = repository.metadata.connection
 
