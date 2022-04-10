@@ -3,16 +3,13 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.31",
+    "version": "1.0.32",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "files": [
         "build/**/*"
-    ],
-    "peerDependencies": {
-        "typeorm": "*"
-    },
+    ], 
     "devDependencies": {
         "@livequery/types": "^1.0.34",
         "@types/node": "^14.14.20",

@@ -1,6 +1,6 @@
 import { Between, Connection, FindManyOptions, getConnection, getRepository, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
 import { LivequeryRequest, UpdatedData } from '@livequery/types'
-import { filter, fromEvent, mergeMap, of, Subject } from "rxjs";
+import { filter, fromEvent, mergeMap, Subject } from "rxjs";
 import { DataChangePayload } from "./DataChangePayload";
 import { JsonUtil } from "./helpers/JsonUtil";
 import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder";
@@ -10,17 +10,14 @@ import { v4 } from 'uuid'
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { ControllerList } from "./MetadataStorage";
 import { PathMapper } from "./helpers/PathMapper";
-import { applyDecorators, Injectable, NestInterceptor, UseInterceptors,Provider } from '@nestjs/common';
 
 const LIVEQUERY_MAGIC_KEY = `${process.env.LIVEQUERY_MAGIC_KEY || 'livequery'}/`
 
-@Injectable()
 export class TypeormDatasource {
 
     #refs_map = new Map<string, Repository<any>>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
-    #id = v4()
     #realtime_repositories: Repository<any>[] = []
     public readonly changes = new Subject()
 
@@ -29,7 +26,7 @@ export class TypeormDatasource {
     static async init() {
 
 
-        const datasource = new TypeormDatasource() 
+        const datasource = new TypeormDatasource()
 
         for (const connection of new Set(ControllerList.map(c => c.connection || 'default'))) {
             try { await getConnection(connection) } catch (e) {
@@ -40,14 +37,13 @@ export class TypeormDatasource {
         for (const { connection = 'default', entity, method, target, realtime = false } of ControllerList) {
             for (const fullpath of PathMapper(
                 Reflect.getMetadata('path', target.constructor),
-                Reflect.getMetadata('path', target.constructor, method)
+                Reflect.getMetadata('path', target[method])
             )) {
-
+               
                 const repository = datasource.#entities_map.get(entity) ?? await getRepository(entity, connection)
                 datasource.#entities_map.set(entity, repository)
                 if (!fullpath.includes(LIVEQUERY_MAGIC_KEY)) throw new Error(`Path "${fullpath}" doesn't includes "${LIVEQUERY_MAGIC_KEY}"`)
                 const ref = fullpath.split(LIVEQUERY_MAGIC_KEY)[1]
-
                 const schema_ref = ref.replaceAll(':', '')
 
 
@@ -127,7 +123,7 @@ export class TypeormDatasource {
                 [key]: ILike(value),
                 ...query_params.where as any
             }))
-        } 
+        }
 
         // Document query
         if (!is_collection) {
