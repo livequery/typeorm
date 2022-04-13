@@ -61,7 +61,7 @@ export class TypeormDatasource {
 
 
     async query(query: LivequeryRequest) {
-        const repository = this.#refs_map.get(query.schema_collection_ref)
+        const repository = this.#refs_map.get((query as any).schema_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
 
 
