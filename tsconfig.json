@@ -18,8 +18,8 @@
       "ESNext.String",
       "ESNext.Array",
       "ES2019",
-      "es2021",
-      "ESNext"
+      "ESNext",
+      "ES7"
     ],
     "importHelpers": true
   }, 

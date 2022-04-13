@@ -120,7 +120,7 @@ export class TypeormDatasource {
         const like_expressions = filters.filter(f => f[1] == 'like')
         if (like_expressions.length > 0) {
             query_params.where = like_expressions.map(([key, _, value]) => ({
-                [key]: ILike(value),
+                [key]: ILike(`%${value}%`),
                 ...query_params.where as any
             }))
         }
