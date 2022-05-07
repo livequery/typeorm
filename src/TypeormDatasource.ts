@@ -209,8 +209,8 @@ export class TypeormDatasource {
                     filter(payload => payload.type == 'removed' || !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
                         const data = JsonUtil.deepJsonParse({ id, ...updated_values || {} })
-                        if (type == 'added' || type == 'removed') return refs.map(({ ref }) => ({ ref, data, type }))
-                        if (type == 'modified') return refs.reduce((p, { old_ref, ref }) => {
+                        if (type == 'added' || type == 'removed') return refs.filter(r => r).map(({ ref }) => ({ ref, data, type }))
+                        if (type == 'modified') return refs.filter(r => r).reduce((p, { old_ref, ref }) => {
                             if (old_ref == ref) {
                                 p.push({ data, ref, type })
                             } else {
