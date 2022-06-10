@@ -1,4 +1,4 @@
-import { Between, Connection, FindManyOptions, getConnection, getRepository, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
+import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
 import { LivequeryRequest, UpdatedData } from '@livequery/types'
 import { filter, fromEvent, mergeMap, Subject } from "rxjs";
 import { DataChangePayload } from "./DataChangePayload";
@@ -8,10 +8,10 @@ import { CreateUpdateListenerSqlBuilder } from "./sql/CreateUpdateListenerSqlBui
 import { Cursor } from './helpers/Cursor'
 import { v4 } from 'uuid'
 import createPostgresSubscriber, { Subscriber } from "pg-listen"
-import { ControllerList } from "./MetadataStorage";
-import { PathMapper } from "./helpers/PathMapper";
+import { RouteOptions } from "./RouteOptions";
 
-const LIVEQUERY_MAGIC_KEY = `${process.env.LIVEQUERY_MAGIC_KEY || 'livequery'}/`
+
+
 
 export class TypeormDatasource {
 
@@ -21,46 +21,40 @@ export class TypeormDatasource {
     #realtime_repositories: Repository<any>[] = []
     public readonly changes = new Subject()
 
-    private constructor() { }
+    #init_progress: Promise<void>
 
-    static async init() {
+    constructor(
+        private connections: { [key: string]: DataSource },
+        private config: Array<RouteOptions & { refs: string[] }>
+    ) {
+        this.#init_progress = this.#init()
+    }
 
+    async #init() {
 
-        const datasource = new TypeormDatasource()
+        for (const { connection = 'default', entity, refs, realtime = false } of this.config) {
+            for (const ref of refs) {
+                const datasource = this.connections[connection]
+                if (!datasource) throw new Error(`Can not find [${connection}] datasource`)
 
-        for (const connection of new Set(ControllerList.map(c => c.connection || 'default'))) {
-            try { await getConnection(connection) } catch (e) {
-                throw new Error(`Database connection [${connection}] not found, please check TypeormDatasource dependencies (you can add one repository as dependency)`)
-            }
-        }
+                const repository = this.#entities_map.get(entity) ?? await datasource.getRepository(entity)
+                this.#entities_map.set(entity, repository)
 
-        for (const { connection = 'default', entity, method, target, realtime = false } of ControllerList) {
-            for (const fullpath of PathMapper(
-                Reflect.getMetadata('path', target.constructor),
-                Reflect.getMetadata('path', target[method])
-            )) {
-               
-                const repository = datasource.#entities_map.get(entity) ?? await getRepository(entity, connection)
-                datasource.#entities_map.set(entity, repository)
-                if (!fullpath.includes(LIVEQUERY_MAGIC_KEY)) throw new Error(`Path "${fullpath}" doesn't includes "${LIVEQUERY_MAGIC_KEY}"`)
-                const ref = fullpath.split(LIVEQUERY_MAGIC_KEY)[1]
                 const schema_ref = ref.replaceAll(':', '')
-
-
-                datasource.#repositories_map.set(repository, new Set([
-                    ... (datasource.#repositories_map.get(repository) || []),
+                this.#repositories_map.set(repository, new Set([
+                    ... (this.#repositories_map.get(repository) || []),
                     schema_ref
                 ]))
-                datasource.#refs_map.set(schema_ref, repository)
-                realtime && datasource.#realtime_repositories.push(repository)
+                this.#refs_map.set(schema_ref, repository)
+                realtime && this.#realtime_repositories.push(repository)
             }
         }
-
-        return datasource
     }
 
 
     async query(query: LivequeryRequest) {
+        await this.#init_progress
+
         const repository = this.#refs_map.get((query as any).schema_ref)
         if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
 
@@ -161,8 +155,9 @@ export class TypeormDatasource {
     }
 
     async active_postgres_sync() {
+        await this.#init_progress
 
-        const subscribers = new Map<Connection, {
+        const subscribers = new Map<DataSource, {
             subscriber: Subscriber,
             tables: Map<string, {
                 function_name: string,
@@ -204,7 +199,7 @@ export class TypeormDatasource {
                 await repository.query(CreateTableTriggerCMD)
             }
             await subscriber.listenTo('realtime_sync')
-            fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
+            return fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
                 .pipe(
                     filter(payload => payload.type == 'removed' || !!payload.data),
                     mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {

@@ -1,3 +1,3 @@
-export { LinkTypeormDatasource } from './src/LinkTypeormDatasource'
 export { TypeormDatasource } from './src/TypeormDatasource'
-export { TypeormDatasourceOptions } from './src/MetadataStorage'
+export * from './src/DataChangePayload'
+export * from './src/RouteOptions' 

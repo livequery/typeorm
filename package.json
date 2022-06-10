@@ -3,21 +3,21 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.34",
+    "version": "1.0.35",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "files": [
         "build/**/*"
-    ], 
+    ],
     "devDependencies": {
-        "@livequery/types": "^1.0.34",
-        "@types/node": "^14.14.20",
-        "pg": "^8.5.1",
-        "pg-listen": "^1.7.0",
-        "rxjs": "^7.1.0",
-        "typeorm": "^0.2.41",
-        "uuid": "^8.3.2"
+        "@livequery/types": "1.x",
+        "@types/node": "*",
+        "pg": "8.x",
+        "pg-listen": "1.x",
+        "rxjs": "7.x",
+        "typeorm": "0.3.x",
+        "uuid": "8.x"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
@@ -25,5 +25,8 @@
         "deploy": "yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish --access public"
     },
     "author": "",
-    "license": "ISC" 
+    "license": "ISC",
+    "dependencies": {
+        "@livequery/nestjs": "^1.0.39"
+    }
 }
