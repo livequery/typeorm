@@ -1,13 +1,15 @@
 export const Cursor = {
-    encode(v: number) {
-        return Buffer.from(JSON.stringify(v), 'utf8').toString('base64')
+    encode(v: any) {
+        if (!v) return null
+        return Buffer.from(JSON.stringify(v), 'utf8').toString('hex')
     },
 
-    decode(v: string) {
-        try{
-            return JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as number
-        }catch(e){
+    decode<T>(v: string) {
+        if (!v) return null
+        try {
+            return JSON.parse(Buffer.from(v, 'hex').toString('utf8')) as T
+        } catch (e) {
             throw 'INVAILD_CURSOR'
         }
     }
-}
+} 

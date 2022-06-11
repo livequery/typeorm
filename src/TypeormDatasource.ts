@@ -75,10 +75,8 @@ export class TypeormDatasource {
             },
             take: options._limit + 1,
             order: {
-                created_at: 'DESC',
-                ...options._order_by ? {
-                    [options._order_by]: options._sort?.toUpperCase() as 1 | "DESC" | "ASC" | -1
-                } : {},
+                ...options._order_by ? { [options._order_by as string]: options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC' } : {},
+                ...options._order_by == 'created_at' ? {} : { created_at: 'DESC' }
             },
 
             ...options._select ? { select: (options as any)._select as string[] } : {},
@@ -104,8 +102,10 @@ export class TypeormDatasource {
 
 
         if (options._cursor) {
-            const value = Cursor.decode(options._cursor || Date.now())
-            query_params.where[options._order_by as string || 'created_at'] = options._sort == 'asc' ? MoreThan(value) : LessThan(value)
+            const prev_cursor = Cursor.decode<any>(options._cursor || Date.now())
+            for (const [key, value] of Object.entries(prev_cursor)) {
+                query_params.where[key] = (key == 'created_at' || options._sort?.toUpperCase() == 'DESC') ? LessThan(value) : MoreThan(value)
+            }
         }
 
 
@@ -126,10 +126,15 @@ export class TypeormDatasource {
         }
 
         // Collection query
+
         const data = await repository.find(query_params)
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)
-        const next_cursor = has_more ? Cursor.encode(items[options._limit - 1][options._order_by as string || 'created_at']) : null
+        const last_item = items[options._limit - 1]
+        const next_cursor = !has_more ? null : Cursor.encode({
+            created_at: last_item.created_at,
+            [options._order_by]: last_item[options._order_by]
+        })
 
         return {
             items,
