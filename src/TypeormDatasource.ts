@@ -122,7 +122,7 @@ export class TypeormDatasource {
         // Document query
         if (!is_collection) {
             const data = await repository.findOne(query_params) ?? null
-            return data
+            return { item: data }
         }
 
         // Collection query
