@@ -1,15 +1,9 @@
 import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
-import { LivequeryRequest, UpdatedData } from '@livequery/types'
-import { filter, fromEvent, mergeMap, Subject } from "rxjs";
-import { DataChangePayload } from "./DataChangePayload";
-import { JsonUtil } from "./helpers/JsonUtil";
-import { CreateTableTriggerSqlBuilder } from "./sql/CreateTableTriggerSqlBuilder";
-import { CreateUpdateListenerSqlBuilder } from "./sql/CreateUpdateListenerSqlBuilder";
+import { LivequeryRequest } from '@livequery/types'
+import { Subject } from "rxjs";
 import { Cursor } from './helpers/Cursor'
 import { v4 } from 'uuid'
-import createPostgresSubscriber, { Subscriber } from "pg-listen"
 import { RouteOptions } from "./RouteOptions";
-
 
 
 
@@ -24,17 +18,16 @@ export class TypeormDatasource {
     #init_progress: Promise<void>
 
     constructor(
-        private connections: { [key: string]: DataSource },
+        private connections: Array<DataSource & { name: string }>,
         private config: Array<RouteOptions & { refs: string[] }>
     ) {
         this.#init_progress = this.#init()
     }
 
     async #init() {
-
         for (const { connection = 'default', entity, refs, realtime = false } of this.config) {
             for (const ref of refs) {
-                const datasource = this.connections[connection]
+                const datasource = this.connections.find(c => c.name == connection)
                 if (!datasource) throw new Error(`Can not find [${connection}] datasource`)
 
                 const repository = this.#entities_map.get(entity) ?? await datasource.getRepository(entity)
@@ -159,72 +152,72 @@ export class TypeormDatasource {
         return await repository.delete(query.keys)
     }
 
-    async active_postgres_sync() {
-        await this.#init_progress
+    // async active_postgres_sync() {
+    //     await this.#init_progress
 
-        const subscribers = new Map<DataSource, {
-            subscriber: Subscriber,
-            tables: Map<string, {
-                function_name: string,
-                repository: Repository<any>
-            }>
-        }>()
+    //     const subscribers = new Map<DataSource, {
+    //         subscriber: Subscriber,
+    //         tables: Map<string, {
+    //             function_name: string,
+    //             repository: Repository<any>
+    //         }>
+    //     }>()
 
-        // Init subscribers
-        for (const repository of this.#realtime_repositories) {
+    //     // Init subscribers
+    //     for (const repository of this.#realtime_repositories) {
 
-            const connection = repository.metadata.connection
+    //         const connection = repository.metadata.connection
 
-            if (!subscribers.has(connection)) {
-                const { database, host, port, username, password } = connection.options as any
-                const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
-                await subscriber.connect()
-                subscribers.set(connection, {
-                    subscriber,
-                    tables: new Map()
-                })
-            }
+    //         if (!subscribers.has(connection)) {
+    //             const { database, host, port, username, password } = connection.options as any
+    //             const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
+    //             await subscriber.connect()
+    //             subscribers.set(connection, {
+    //                 subscriber,
+    //                 tables: new Map()
+    //             })
+    //         }
 
-            const { tables } = subscribers.get(connection)
+    //         const { tables } = subscribers.get(connection)
 
-            const table_name = repository.metadata.tableName
-            const function_name = `listen_update_for_${table_name.replaceAll('-', '_')}`
-            if (!tables.has(table_name)) {
-                tables.set(table_name, { function_name, repository })
-            }
-        }
+    //         const table_name = repository.metadata.tableName
+    //         const function_name = `listen_update_for_${table_name.replaceAll('-', '_')}`
+    //         if (!tables.has(table_name)) {
+    //             tables.set(table_name, { function_name, repository })
+    //         }
+    //     }
 
-        // Active listeners
-        for (const [_, { subscriber, tables }] of subscribers) {
-            for (const [table_name, { function_name, repository }] of tables) {
-                const refs = [...this.#repositories_map.get(repository).values()]
-                const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
-                await repository.query(CreateUpdateListenerCMD)
-                const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
-                await repository.query(CreateTableTriggerCMD)
-            }
-            await subscriber.listenTo('realtime_sync')
-            return fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
-                .pipe(
-                    filter(payload => payload.type == 'removed' || !!payload.data),
-                    mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
-                        const data = JsonUtil.deepJsonParse({ id, ...updated_values || {} })
-                        if (type == 'added' || type == 'removed') return refs.filter(r => r).map(({ ref }) => ({ ref, data, type }))
-                        if (type == 'modified') return refs.filter(r => r).reduce((p, { old_ref, ref }) => {
-                            if (old_ref == ref) {
-                                p.push({ data, ref, type })
-                            } else {
-                                p.push({ data: { id: new_doc.id }, ref: old_ref, type: 'removed' })
-                                p.push({ data: new_doc, ref, type: 'added' })
-                            }
-                            return p
-                        }, [] as UpdatedData[])
-                        return [] as UpdatedData[]
-                    })
-                )
-                .subscribe(this.changes)
-        }
+    //     // Active listeners
+    //     for (const [_, { subscriber, tables }] of subscribers) {
+    //         for (const [table_name, { function_name, repository }] of tables) {
+    //             const refs = [...this.#repositories_map.get(repository).values()]
+    //             const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
+    //             await repository.query(CreateUpdateListenerCMD)
+    //             const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
+    //             await repository.query(CreateTableTriggerCMD)
+    //         }
+    //         await subscriber.listenTo('realtime_sync')
+    //         return fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
+    //             .pipe(
+    //                 filter(payload => payload.type == 'removed' || !!payload.data),
+    //                 mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
+    //                     const data = JsonUtil.deepJsonParse({ id, ...updated_values || {} })
+    //                     if (type == 'added' || type == 'removed') return refs.filter(r => r).map(({ ref }) => ({ ref, data, type }))
+    //                     if (type == 'modified') return refs.filter(r => r).reduce((p, { old_ref, ref }) => {
+    //                         if (old_ref == ref) {
+    //                             p.push({ data, ref, type })
+    //                         } else {
+    //                             p.push({ data: { id: new_doc.id }, ref: old_ref, type: 'removed' })
+    //                             p.push({ data: new_doc, ref, type: 'added' })
+    //                         }
+    //                         return p
+    //                     }, [] as UpdatedData[])
+    //                     return [] as UpdatedData[]
+    //                 })
+    //             )
+    //             .subscribe(this.changes)
+    //     }
 
-    }
+    // }
 }
 
