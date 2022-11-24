@@ -5,9 +5,9 @@ import { DataSource } from 'typeorm'
 import { getConnectionToken } from '@nestjs/typeorm'
 import { getEntityName } from "./helpers/getEntityName";
 
-export const [_, UseTypeormDatasource] = createDatasourceMapper<RouteOptions>(TypeormDatasource)
+const [_, UseTypeormDatasource] = createDatasourceMapper<RouteOptions>(TypeormDatasource)
 
-export const TypeormDatasourceProvider = (connection_names: string[] = []) => _(options => {
+export const TypeormDatasourceProviderWithMultipleConnections= (connection_names: string[] = [] ) => _(options => {
 
     const options_with_name = options.map(option => ({
         ...option,
@@ -16,10 +16,14 @@ export const TypeormDatasourceProvider = (connection_names: string[] = []) => _(
 
     return {
         provide: TypeormDatasource,
-        inject: ['default', ...connection_names].map(connection_name => getConnectionToken(connection_name)),
-        useFactory: (connections: DataSource[]) => new TypeormDatasource(
+        inject: [undefined, ...connection_names].map(connection_name => getConnectionToken(connection_name)),
+        useFactory: (... connections: DataSource[]) => new TypeormDatasource(
             connections,
             options_with_name
         )
     }
 })
+
+export { UseTypeormDatasource }
+
+export const TypeormDatasourceProvider = TypeormDatasourceProviderWithMultipleConnections()

@@ -1,9 +1,8 @@
-import typeorm from 'typeorm'
+import { getMetadataArgsStorage } from 'typeorm'
 
 
 export function getEntityName(entity) {
-    return typeorm
-        .getMetadataArgsStorage()
+    return getMetadataArgsStorage()
         .tables
         .find(t => t.target == entity).name
 }
