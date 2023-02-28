@@ -1,15 +1,24 @@
-import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository } from "typeorm";
+import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
 import { LivequeryRequest } from '@livequery/types'
 import { Subject } from "rxjs";
 import { Cursor } from './helpers/Cursor'
 import { v4 } from 'uuid'
 import { RouteOptions } from "./RouteOptions";
+import { DEFAULT_SORT_FIELD } from "./const";
 
-
+const ExpressionMapper = {
+    eq: { sql: v => v, mongodb: v => ({ $eq: v }) },
+    ne: { sql: v => Not(v), mongodb: v => ({ $ne: v }) },
+    lt: { sql: v => LessThan(v), mongodb: v => ({ $lt: v }) },
+    lte: { sql: v => LessThanOrEqual(v), mongodb: v => ({ $lte: v }) },
+    gt: { sql: v => MoreThan(v), mongodb: v => ({ $gt: v }) },
+    gte: { sql: v => MoreThanOrEqual(v), mongodb: v => ({ $gte: v }) },
+    between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) }
+}
 
 export class TypeormDatasource {
 
-    #refs_map = new Map<string, Repository<any>>()
+    #refs_map = new Map<string, { repository: Repository<any>, db_type: DataSourceOptions['type'] }>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
     #realtime_repositories: Repository<any>[] = []
@@ -28,6 +37,7 @@ export class TypeormDatasource {
         for (const { connection = 'default', entity, refs, realtime = false } of this.config) {
             for (const ref of refs) {
                 const datasource = this.connections.find(c => c.name == connection)
+                const db_type = datasource.options.type
                 if (!datasource) throw new Error(`Can not find [${connection}] datasource`)
 
                 const repository = this.#entities_map.get(entity) ?? await datasource.getRepository(entity)
@@ -38,7 +48,7 @@ export class TypeormDatasource {
                     ... (this.#repositories_map.get(repository) || []),
                     schema_ref
                 ]))
-                this.#refs_map.set(schema_ref, repository)
+                this.#refs_map.set(schema_ref, { repository, db_type })
                 realtime && this.#realtime_repositories.push(repository)
             }
         }
@@ -48,69 +58,73 @@ export class TypeormDatasource {
     async query(query: LivequeryRequest) {
         await this.#init_progress
 
-        const repository = this.#refs_map.get((query as any).schema_ref)
-        if (!repository) throw { code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
+        const config = this.#refs_map.get((query as any).schema_ref)
+        if (!config) throw { status: 500, code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
 
-
-        if (query.method == 'get') return this.#get(repository, query)
+        const { db_type, repository } = config
+        if (query.method == 'get') return this.#get(repository, query, db_type)
         if (query.method == 'post') return this.#post(repository, query)
         if (query.method == 'put') return this.#put(repository, query)
         if (query.method == 'patch') return this.#patch(repository, query)
         if (query.method == 'delete') return this.#del(repository, query)
     }
 
-    async #get(repository: Repository<any>, query: LivequeryRequest) {
-        const { is_collection, options, keys, filters } = query
+    async #get(repository: Repository<any>, { is_collection, options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
 
+
+        const conditions = [
+
+            // Client filters
+            ...filters,
+
+            // Cursor
+            ...Object
+                .entries(Cursor.decode<any>(options._cursor))
+                .map(([key, value]) => [
+                    key,
+                    options._sort?.toUpperCase() == 'ASC' ? 'gte' : 'lte',
+                    value
+                ]),
+
+            // Keys
+            ...Object
+                .entries(keys)
+                .map(([key, value]) => ([key, 'eq', value])),
+
+        ].reduce((p, [key, ex, value]) => {
+            if (!p.has(key)) p.set(key, [])
+            p.get(key).push(ExpressionMapper[ex as keyof typeof ExpressionMapper][db_type == 'mongodb' ? 'mongodb' : 'sql'](value))
+            return p
+        }, new Map<string, object[]>())
+
+        let addional_conditions = {}
+
+        // Search 
+        if (options._search) {
+            db_type == 'mongodb' && (addional_conditions['$text'] = { $search: options._search })
+            if (db_type != 'mongodb') throw { status: 500, code: `${db_type.toUpperCase()}_SEARCH_NOT_SUPPORT` }
+        }
+
+        const where = [...conditions.entries()].reduce((p, [key, conditions]) => {
+            p[key] = db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
+            return p
+        }, addional_conditions)
+
+       
+
+        const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
+        const order = options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
+            [DEFAULT_SORT_FIELD]: 'DESC',
+            [options._order_by as string]: sort
+        }
         const query_params: FindManyOptions = {
-            where: {
-                ...keys
-            },
+            where,
             take: options._limit + 1,
-            order: {
-                ...options._order_by ? { [options._order_by as string]: options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC' } : {},
-                ...options._order_by == 'created_at' ? {} : { created_at: 'DESC' }
-            },
-
+            order,
             ...options._select ? { select: (options as any)._select as string[] } : {},
         }
 
-        const mapper = {
-            'eq': (key: string, value: any) => query_params.where[key] = value,
-            'ne': (key: string, value: any) => query_params.where[key] = Not(value),
-            'lt': (key: string, value: any) => query_params.where[key] = LessThan(value),
-            'lte': (key: string, value: any) => query_params.where[key] = LessThanOrEqual(value),
-            'gt': (key: string, value: any) => query_params.where[key] = MoreThan(value),
-            'gte': (key: string, value: any) => query_params.where[key] = MoreThanOrEqual(value),
-            between: (key: string, [a, b]: [number, number]) => query_params.where[key] = Between(a, b)
-        }
 
-
-        for (const [key, expression, value] of filters) {
-            const fn = mapper[expression as string]
-            fn && fn(key, value)
-        }
-
-
-
-
-        if (options._cursor) {
-            const prev_cursor = Cursor.decode<any>(options._cursor || Date.now())
-            for (const [key, value] of Object.entries(prev_cursor)) {
-                query_params.where[key] = (key == 'created_at' || options._sort?.toUpperCase() == 'DESC') ? LessThan(value) : MoreThan(value)
-            }
-        }
-
-
-
-        // Add like expression
-        const like_expressions = filters.filter(f => f[1] == 'like')
-        if (like_expressions.length > 0) {
-            query_params.where = like_expressions.map(([key, _, value]) => ({
-                [key]: ILike(`%${value}%`),
-                ...query_params.where as any
-            }))
-        }
 
         // Document query
         if (!is_collection) {
@@ -119,7 +133,6 @@ export class TypeormDatasource {
         }
 
         // Collection query
-
         const data = await repository.find(query_params)
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit)

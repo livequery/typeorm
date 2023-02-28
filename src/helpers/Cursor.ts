@@ -5,7 +5,7 @@ export const Cursor = {
     },
 
     decode<T>(v: string) {
-        if (!v) return null
+        if (!v) return {}
         try {
             return JSON.parse(Buffer.from(v, 'hex').toString('utf8')) as T
         } catch (e) {
