@@ -3,7 +3,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.52",
+    "version": "1.0.53",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
@@ -13,8 +13,7 @@
     "devDependencies": {
         "@livequery/types": "*",
         "rxjs": "*",
-        "typeorm": "*",
-        "uuid": "*"
+        "typeorm": "*"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",

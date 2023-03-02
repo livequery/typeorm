@@ -2,7 +2,7 @@ import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual,
 import { LivequeryRequest } from '@livequery/types'
 import { Subject } from "rxjs";
 import { Cursor } from './helpers/Cursor'
-import { v4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import { RouteOptions } from "./RouteOptions";
 import { DEFAULT_SORT_FIELD } from "./const";
 
@@ -63,10 +63,10 @@ export class TypeormDatasource {
 
         const { db_type, repository } = config
         if (query.method == 'get') return this.#get(repository, query, db_type)
-        if (query.method == 'post') return this.#post(repository, query)
-        if (query.method == 'put') return this.#put(repository, query)
-        if (query.method == 'patch') return this.#patch(repository, query)
-        if (query.method == 'delete') return this.#del(repository, query)
+        if (query.method == 'post') return this.#post(repository, query, db_type)
+        if (query.method == 'put') return this.#put(repository, query, db_type)
+        if (query.method == 'patch') return this.#patch(repository, query, db_type)
+        if (query.method == 'delete') return this.#del(repository, query, db_type)
     }
 
     async #get(repository: Repository<any>, { is_collection, options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
@@ -88,7 +88,7 @@ export class TypeormDatasource {
 
             // Keys
             ...Object
-                .entries(keys)
+                .entries(this.#remap_keys(keys, db_type == 'mongodb'))
                 .map(([key, value]) => ([key, 'eq', value])),
 
         ].reduce((p, [key, ex, value]) => {
@@ -149,25 +149,32 @@ export class TypeormDatasource {
         }
     }
 
-    async #post(repository: Repository<any>, query: LivequeryRequest) {
+    async #post(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+        const obj = new (repository.metadata.target as any)()
         const data = {
-            id: v4(),
-            ... (new (repository.metadata.target as any)()),
+            ...this.#remap_keys(obj, db_type == 'mongodb'),
             ...query.body
         }
         return await repository.save(data)
     }
 
-    async #put(repository: Repository<any>, query: LivequeryRequest) {
-        return await repository.update(query.keys, query.body)
+    async #put(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+        return await repository.update(this.#remap_keys(query.keys, db_type == 'mongodb'), query.body)
     }
 
-    async #patch(repository: Repository<any>, query: LivequeryRequest) {
-        return await repository.update(query.keys, query.body)
+    async #patch(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+        const { id, _id, ...keys } = query.keys
+        return await repository.update(this.#remap_keys(query.keys, db_type == 'mongodb'), query.body)
     }
 
-    async #del(repository: Repository<any>, query: LivequeryRequest) {
-        return await repository.delete(query.keys)
+    async #del(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+        return await repository.delete(this.#remap_keys(query.keys, db_type == 'mongodb'))
+    }
+
+    async #remap_keys(keys: any, mongodb: boolean) {
+        const { id, ...rest } = keys || {}
+        if (mongodb) return { _id: id, ...rest }
+        return keys
     }
 
     // async active_postgres_sync() {
