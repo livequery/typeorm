@@ -5,6 +5,7 @@ import { Cursor } from './helpers/Cursor'
 import { randomUUID } from 'crypto'
 import { RouteOptions } from "./RouteOptions";
 import { DEFAULT_SORT_FIELD } from "./const";
+import { MongoDBMapper } from "./helpers/MongoDBMapper";
 
 const ExpressionMapper = {
     eq: { sql: v => v, mongodb: v => ({ $eq: v }) },
@@ -88,7 +89,7 @@ export class TypeormDatasource {
 
             // Keys
             ...Object
-                .entries(this.#remap_keys(keys, db_type == 'mongodb'))
+                .entries(db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(keys) : keys)
                 .map(([key, value]) => ([key, 'eq', value])),
 
         ].reduce((p, [key, ex, value]) => {
@@ -129,18 +130,16 @@ export class TypeormDatasource {
 
         // Document query
         if (!is_collection) {
-            const data = await repository.findOne(query_params) ?? null
-            const { _id, id, ...rest } = data
-            return { item: { id: _id || id, ...rest } }
+            const item = await repository.findOne(query_params) ?? null
+            return { item: db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(item) : item }
         }
 
         // Collection query
         const data = await repository.find(query_params)
         const has_more = data.length > options._limit
-        const items = data.slice(0, options._limit).map(item => {
-            const { _id, id, ...rest } = item
-            return { id: _id || id, ...rest }
-        })
+        const items = data.slice(0, options._limit).map(
+            item => db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(item) : item
+        )
         const last_item = items[options._limit - 1]
         const next_cursor = !has_more ? null : Cursor.encode({
             [DEFAULT_SORT_FIELD]: last_item[DEFAULT_SORT_FIELD],
@@ -154,31 +153,37 @@ export class TypeormDatasource {
     }
 
     async #post(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+
         const obj = new (repository.metadata.target as any)()
-        const data = {
-            ...this.#remap_keys(obj, db_type == 'mongodb'),
+        const data = await repository.save({
+            ...db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(obj) : obj,
             ...query.body
+        })
+
+        return {
+            item: db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(data) : data
         }
-        return await repository.save(data)
     }
 
     async #put(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
-        return await repository.update(this.#remap_keys(query.keys, db_type == 'mongodb'), query.body)
+        return await repository.update(
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys,
+            query.body
+        )
     }
 
     async #patch(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
-        const { id, _id, ...keys } = query.keys
-        return await repository.update(this.#remap_keys(query.keys, db_type == 'mongodb'), query.body)
+        return await repository.update(
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys,
+            query.body
+        )
+
     }
 
     async #del(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
-        return await repository.delete(this.#remap_keys(query.keys, db_type == 'mongodb'))
-    }
-
-    async #remap_keys(keys: any, mongodb: boolean) {
-        const { id, ...rest } = keys || {}
-        if (mongodb) return { _id: id, ...rest }
-        return keys
+        return await repository.delete(
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys
+        )
     }
 
     // async active_postgres_sync() {
