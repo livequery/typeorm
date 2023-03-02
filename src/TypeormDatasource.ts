@@ -82,7 +82,7 @@ export class TypeormDatasource {
                 .entries(Cursor.decode<any>(options._cursor))
                 .map(([key, value]) => [
                     key,
-                    options._sort?.toUpperCase() == 'ASC' ? 'gte' : 'lte',
+                    `${options._sort?.toUpperCase() == 'ASC' ? 'gt' : 'lt'}${(key != DEFAULT_SORT_FIELD ? 'e' : '')}`,
                     value
                 ]),
 
@@ -110,7 +110,7 @@ export class TypeormDatasource {
             return p
         }, addional_conditions)
 
-       
+
 
         const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
         const order = options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
@@ -138,7 +138,7 @@ export class TypeormDatasource {
         const items = data.slice(0, options._limit)
         const last_item = items[options._limit - 1]
         const next_cursor = !has_more ? null : Cursor.encode({
-            created_at: last_item.created_at,
+            [DEFAULT_SORT_FIELD]: last_item[DEFAULT_SORT_FIELD],
             [options._order_by]: last_item[options._order_by]
         })
 
