@@ -113,9 +113,9 @@ export class TypeormDatasource {
 
 
         const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
-        const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
-            [DEFAULT_SORT_FIELD]: 'DESC',
-            [options._order_by as string]: sort
+        const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : { 
+            [options._order_by as string]: sort,
+            [DEFAULT_SORT_FIELD]: 'DESC'
         }) : undefined
 
         const query_params: FindManyOptions = {
