@@ -113,7 +113,7 @@ export class TypeormDatasource {
 
 
         const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
-        const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : { 
+        const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
             [options._order_by as string]: sort,
             [DEFAULT_SORT_FIELD]: 'DESC'
         }) : undefined
@@ -150,7 +150,11 @@ export class TypeormDatasource {
     }
 
     async #post(repository: Repository<any>, query: LivequeryRequest) {
-        const data = { id: v4(), ...query.body }
+        const data = {
+            id: v4(),
+            ... (new (repository.metadata.target as any)()),
+            ...query.body
+        }
         return await repository.save(data)
     }
 
