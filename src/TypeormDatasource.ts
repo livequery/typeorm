@@ -130,13 +130,17 @@ export class TypeormDatasource {
         // Document query
         if (!is_collection) {
             const data = await repository.findOne(query_params) ?? null
-            return { item: data }
+            const { _id, id, ...rest } = data
+            return { item: { id: _id, ...rest } }
         }
 
         // Collection query
         const data = await repository.find(query_params)
         const has_more = data.length > options._limit
-        const items = data.slice(0, options._limit)
+        const items = data.slice(0, options._limit).map(item => {
+            const { _id, id, ...rest } = item
+            return { id: _id, ...rest }
+        })
         const last_item = items[options._limit - 1]
         const next_cursor = !has_more ? null : Cursor.encode({
             [DEFAULT_SORT_FIELD]: last_item[DEFAULT_SORT_FIELD],
