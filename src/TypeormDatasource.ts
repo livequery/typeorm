@@ -131,7 +131,7 @@ export class TypeormDatasource {
         if (!is_collection) {
             const data = await repository.findOne(query_params) ?? null
             const { _id, id, ...rest } = data
-            return { item: { id: _id, ...rest } }
+            return { item: { id: _id || id, ...rest } }
         }
 
         // Collection query
@@ -139,7 +139,7 @@ export class TypeormDatasource {
         const has_more = data.length > options._limit
         const items = data.slice(0, options._limit).map(item => {
             const { _id, id, ...rest } = item
-            return { id: _id, ...rest }
+            return { id: _id || id, ...rest }
         })
         const last_item = items[options._limit - 1]
         const next_cursor = !has_more ? null : Cursor.encode({
