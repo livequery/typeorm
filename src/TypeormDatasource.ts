@@ -155,6 +155,7 @@ export class TypeormDatasource {
     async #post(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
         const merged = {
             ...new (repository.metadata.target as any)(),
+            ...query.keys,
             ...query.body
         }
         const { _id, id, ...rest } = merged

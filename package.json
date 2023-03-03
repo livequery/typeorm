@@ -3,7 +3,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.59",
+    "version": "1.0.60",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
