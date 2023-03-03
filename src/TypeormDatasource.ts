@@ -153,13 +153,12 @@ export class TypeormDatasource {
     }
 
     async #post(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
-
-        const obj = new (repository.metadata.target as any)()
-        const data = await repository.save({
-            ...db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(obj) : obj,
+        const merged = {
+            ...new (repository.metadata.target as any)(),
             ...query.body
-        })
-
+        }
+        const { _id, id, ...rest } = merged
+        const data = await repository.save(db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(rest) : merged)
         return {
             item: db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(data) : data
         }
