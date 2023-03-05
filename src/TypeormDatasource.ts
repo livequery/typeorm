@@ -100,14 +100,17 @@ export class TypeormDatasource {
 
         let addional_conditions = {}
 
-        // Search 
-        if (options._search) {
-            db_type == 'mongodb' && (addional_conditions['$text'] = { $search: options._search })
-            if (db_type != 'mongodb') throw { status: 500, code: `${db_type.toUpperCase()}_SEARCH_NOT_SUPPORT` }
-        }
-
         const where = [...conditions.entries()].reduce((p, [key, conditions]) => {
-            p[key] = db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
+            if (key == '_search') {
+                if (db_type == 'mongodb') {
+                    p['$text'] = { $search: conditions[0]['$eq'] }
+                } else {
+                    throw { status: 500, code: `${db_type.toUpperCase()}_SEARCH_NOT_SUPPORT` };
+                }
+            } else {
+                p[key] = db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
+            }
+
             return p
         }, addional_conditions)
 
