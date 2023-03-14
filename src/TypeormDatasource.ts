@@ -122,10 +122,11 @@ export class TypeormDatasource {
         const { options, is_collection } = req
 
         const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
-        const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
-            [options._order_by as string]: sort,
+
+        const order = (!options._order_by || (options._order_by == DEFAULT_SORT_FIELD)) ? { [DEFAULT_SORT_FIELD]: sort } : {
+            [options._order_by]: sort,
             [DEFAULT_SORT_FIELD]: 'DESC'
-        }) : undefined
+        }
 
         const query_params: FindManyOptions = {
             where,
