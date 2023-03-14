@@ -70,9 +70,7 @@ export class TypeormDatasource {
         if (query.method == 'delete') return this.#del(repository, query, db_type)
     }
 
-    async #get(repository: Repository<any>, { is_collection, options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
-
-
+    static generate_query_filters({ options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
         const conditions = [
 
             // Client filters
@@ -100,7 +98,7 @@ export class TypeormDatasource {
 
         let addional_conditions = {}
 
-        const where = [...conditions.entries()].reduce((p, [key, conditions]) => {
+        return [...conditions.entries()].reduce((p, [key, conditions]) => {
             if (key == '_search') {
                 if (db_type == 'mongodb') {
                     p['$text'] = { $search: conditions[0]['$eq'] }
@@ -114,7 +112,14 @@ export class TypeormDatasource {
             return p
         }, addional_conditions)
 
+    }
 
+    async #get(repository: Repository<any>, req: LivequeryRequest, db_type: DataSourceOptions['type']) {
+
+
+        const where = TypeormDatasource.generate_query_filters(req, db_type)
+
+        const { options, is_collection } = req
 
         const sort = options._sort?.toUpperCase() == 'ASC' ? 'ASC' : 'DESC'
         const order = options._order_by ? (options._order_by == DEFAULT_SORT_FIELD ? { [DEFAULT_SORT_FIELD]: sort } : {
