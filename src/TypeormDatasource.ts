@@ -1,4 +1,4 @@
-import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
+import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions, In } from "typeorm";
 import { LivequeryRequest } from '@livequery/types'
 import { Subject } from "rxjs";
 import { Cursor } from './helpers/Cursor'
@@ -14,7 +14,8 @@ const ExpressionMapper = {
     lte: { sql: v => LessThanOrEqual(v), mongodb: v => ({ $lte: v }) },
     gt: { sql: v => MoreThan(v), mongodb: v => ({ $gt: v }) },
     gte: { sql: v => MoreThanOrEqual(v), mongodb: v => ({ $gte: v }) },
-    between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) }
+    between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) },
+    in: { sql: a => In(a), mongodb: a => ({ $in: a }) }
 }
 
 type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
@@ -63,7 +64,7 @@ export class TypeormDatasource {
 
         const config = this.#refs_map.get((query as any).schema_ref)
         if (!config) throw { status: 500, code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
-        if(config.query_mapper) return TypeormDatasource.generate_query_filters(query, config.db_type)
+        if (config.query_mapper) return TypeormDatasource.generate_query_filters(query, config.db_type)
         if (query.method == 'get') return this.#get(query, config)
         if (query.method == 'post') return this.#post(query, config)
         if (query.method == 'put') return this.#put(query, config)
@@ -93,7 +94,9 @@ export class TypeormDatasource {
 
         ].reduce((p, [key, ex, value]) => {
             if (!p.has(key)) p.set(key, [])
-            p.get(key).push(ExpressionMapper[ex as keyof typeof ExpressionMapper][db_type == 'mongodb' ? 'mongodb' : 'sql'](value))
+            const resolver = ExpressionMapper[ex as keyof typeof ExpressionMapper]
+            if (!resolver) throw { status: 500, code: `QUERY_${ex.toUpperCase()}_NOT_SUPPORT` }
+            p.get(key).push(resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value))
             return p
         }, new Map<string, object[]>())
 
