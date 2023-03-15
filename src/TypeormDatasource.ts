@@ -17,9 +17,11 @@ const ExpressionMapper = {
     between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) }
 }
 
+type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
+
 export class TypeormDatasource {
 
-    #refs_map = new Map<string, { repository: Repository<any>, db_type: DataSourceOptions['type'] }>()
+    #refs_map = new Map<string, RefMetadata>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
     #realtime_repositories: Repository<any>[] = []
@@ -35,7 +37,7 @@ export class TypeormDatasource {
     }
 
     async #init() {
-        for (const { connection = 'default', entity, refs, realtime = false } of this.config) {
+        for (const { connection = 'default', entity, refs, realtime = false, query_mapper } of this.config) {
             for (const ref of refs) {
                 const datasource = this.connections.find(c => c.name == connection)
                 const db_type = datasource.options.type
@@ -49,7 +51,7 @@ export class TypeormDatasource {
                     ... (this.#repositories_map.get(repository) || []),
                     schema_ref
                 ]))
-                this.#refs_map.set(schema_ref, { repository, db_type })
+                this.#refs_map.set(schema_ref, { repository, db_type, query_mapper })
                 realtime && this.#realtime_repositories.push(repository)
             }
         }
@@ -61,13 +63,12 @@ export class TypeormDatasource {
 
         const config = this.#refs_map.get((query as any).schema_ref)
         if (!config) throw { status: 500, code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
-
-        const { db_type, repository } = config
-        if (query.method == 'get') return this.#get(repository, query, db_type)
-        if (query.method == 'post') return this.#post(repository, query, db_type)
-        if (query.method == 'put') return this.#put(repository, query, db_type)
-        if (query.method == 'patch') return this.#patch(repository, query, db_type)
-        if (query.method == 'delete') return this.#del(repository, query, db_type)
+        if (query.method == 'get') return this.#get(query, config)
+        if(config.query_mapper) return TypeormDatasource.generate_query_filters(query, config.db_type)
+        if (query.method == 'post') return this.#post(query, config)
+        if (query.method == 'put') return this.#put(query, config)
+        if (query.method == 'patch') return this.#patch(query, config)
+        if (query.method == 'delete') return this.#del(query, config)
     }
 
     static generate_query_filters({ options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
@@ -114,7 +115,7 @@ export class TypeormDatasource {
 
     }
 
-    async #get(repository: Repository<any>, req: LivequeryRequest, db_type: DataSourceOptions['type']) {
+    async #get(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
 
 
         const where = TypeormDatasource.generate_query_filters(req, db_type)
@@ -161,11 +162,11 @@ export class TypeormDatasource {
         }
     }
 
-    async #post(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+    async #post(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
         const merged = {
             ...new (repository.metadata.target as any)(),
-            ...query.keys,
-            ...query.body
+            ...req.keys,
+            ...req.body
         }
         const { _id, id, ...rest } = merged
         const data = await repository.save(db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(rest) : merged)
@@ -174,24 +175,24 @@ export class TypeormDatasource {
         }
     }
 
-    async #put(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+    async #put(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
         return await repository.update(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys,
-            query.body
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys,
+            req.body
         )
     }
 
-    async #patch(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+    async #patch(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
         return await repository.update(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys,
-            query.body
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys,
+            req.body
         )
 
     }
 
-    async #del(repository: Repository<any>, query: LivequeryRequest, db_type: DataSourceOptions['type']) {
+    async #del(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
         return await repository.delete(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(query.keys) : query.keys
+            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys
         )
     }
 
