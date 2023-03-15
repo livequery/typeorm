@@ -102,7 +102,7 @@ export class TypeormDatasource {
         return [...conditions.entries()].reduce((p, [key, conditions]) => {
             if (key == '_search') {
                 if (db_type == 'mongodb') {
-                    p['$text'] = { $search: conditions[0]['$eq'] }
+                    p['$text'] = { $search: `${conditions[0]['$eq']}` }
                 } else {
                     throw { status: 500, code: `${db_type.toUpperCase()}_SEARCH_NOT_SUPPORT` };
                 }
