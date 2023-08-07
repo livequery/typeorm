@@ -1,11 +1,10 @@
-import { Between, DataSource, FindManyOptions, ILike, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions, In } from "typeorm";
+import { Between, DataSource, FindManyOptions, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions, In } from "typeorm";
 import { LivequeryRequest } from '@livequery/types'
 import { Subject } from "rxjs";
-import { Cursor } from './helpers/Cursor'
-import { randomUUID } from 'crypto'
-import { RouteOptions } from "./RouteOptions";
-import { DEFAULT_SORT_FIELD } from "./const";
-import { MongoDBMapper } from "./helpers/MongoDBMapper";
+import { Cursor } from './helpers/Cursor.js'
+import { RouteOptions } from "./RouteOptions.js";
+import { DEFAULT_SORT_FIELD } from "./const.js";
+import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
 
 const ExpressionMapper = {
     eq: { sql: v => v, mongodb: v => ({ $eq: v }) },
@@ -38,11 +37,11 @@ export class TypeormDatasource {
     }
 
     async #init() {
-        for (const { connection = 'default', entity, refs, realtime = false, query_mapper } of this.config) {
+        for (const { connection_name = 'default', entity, refs, realtime = false, query_mapper } of this.config) {
             for (const ref of refs) {
-                const datasource = this.connections.find(c => c.name == connection)
+                const datasource = this.connections.find(c => c.name == connection_name)
                 const db_type = datasource.options.type
-                if (!datasource) throw new Error(`Can not find [${connection}] datasource`)
+                if (!datasource) throw new Error(`Can not find [${connection_name}] datasource`)
 
                 const repository = this.#entities_map.get(entity) ?? await datasource.getRepository(entity)
                 this.#entities_map.set(entity, repository)

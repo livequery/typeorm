@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "ESNext",
     "declaration": true,
     "removeComments": true,
     "allowSyntheticDefaultImports": true,
@@ -10,6 +10,7 @@
     "sourceMap": false,
     "outDir": "./build",
     "incremental": false,
+    "moduleResolution": "NodeNext",
     "rootDir": ".",
     "useDefineForClassFields": true,
     "lib": [
