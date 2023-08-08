@@ -1,21 +1,20 @@
-import { Between, DataSource, FindManyOptions, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Not, Repository, And, FindOperator, DataSourceOptions, In } from "typeorm";
+import { DataSource, FindManyOptions, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
 import { LivequeryRequest } from '@livequery/types'
-import { Subject } from "rxjs";
+import { Observable, map } from "rxjs";
 import { Cursor } from './helpers/Cursor.js'
 import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
 import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
+import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
 
-const ExpressionMapper = {
-    eq: { sql: v => v, mongodb: v => ({ $eq: v }) },
-    ne: { sql: v => Not(v), mongodb: v => ({ $ne: v }) },
-    lt: { sql: v => LessThan(v), mongodb: v => ({ $lt: v }) },
-    lte: { sql: v => LessThanOrEqual(v), mongodb: v => ({ $lte: v }) },
-    gt: { sql: v => MoreThan(v), mongodb: v => ({ $gt: v }) },
-    gte: { sql: v => MoreThanOrEqual(v), mongodb: v => ({ $gte: v }) },
-    between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) },
-    in: { sql: a => In(a), mongodb: a => ({ $in: a }) }
+
+export type DatabaseEvent<T extends { id: string } = { id: string }> = {
+    table: string
+    type: 'added' | 'modified' | 'removed',
+    data: Partial<T>,
+    old_data: T
 }
+
 
 type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
 
@@ -24,8 +23,7 @@ export class TypeormDatasource {
     #refs_map = new Map<string, RefMetadata>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
-    #realtime_repositories: Repository<any>[] = []
-    public readonly changes = new Subject()
+    #realtime_repositories = new Map<string, Set<string>>()
 
     #init_progress: Promise<void>
 
@@ -52,11 +50,37 @@ export class TypeormDatasource {
                     schema_ref
                 ]))
                 this.#refs_map.set(schema_ref, { repository, db_type, query_mapper })
-                realtime && this.#realtime_repositories.push(repository)
+                if (realtime) {
+                    const table_name = repository.metadata.tableName
+                    this.#realtime_repositories.set(table_name, new Set([
+                        ... this.#realtime_repositories.get(table_name) || [],
+                        schema_ref
+                    ]))
+                }
             }
         }
     }
 
+
+    realtime_map(data: Observable<DatabaseEvent>) {
+        return data.pipe(
+            map(event => {
+                const refs = this.#realtime_repositories.get(event.table)
+                if (!refs) return
+                const data = { ...event.old_data, ...event.data }
+                for (const ref of refs) {
+                    const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
+                    const new_ref = event.data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
+                    return {
+                        old_ref,
+                        new_ref,
+                        old_data: event.old_data,
+                        new_data: event.data
+                    }
+                }
+            })
+        )
+    }
 
     async query(query: LivequeryRequest) {
         await this.#init_progress
@@ -197,73 +221,5 @@ export class TypeormDatasource {
             db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys
         )
     }
-
-    // async active_postgres_sync() {
-    //     await this.#init_progress
-
-    //     const subscribers = new Map<DataSource, {
-    //         subscriber: Subscriber,
-    //         tables: Map<string, {
-    //             function_name: string,
-    //             repository: Repository<any>
-    //         }>
-    //     }>()
-
-    //     // Init subscribers
-    //     for (const repository of this.#realtime_repositories) {
-
-    //         const connection = repository.metadata.connection
-
-    //         if (!subscribers.has(connection)) {
-    //             const { database, host, port, username, password } = connection.options as any
-    //             const subscriber = createPostgresSubscriber({ host, port, user: username, password, database })
-    //             await subscriber.connect()
-    //             subscribers.set(connection, {
-    //                 subscriber,
-    //                 tables: new Map()
-    //             })
-    //         }
-
-    //         const { tables } = subscribers.get(connection)
-
-    //         const table_name = repository.metadata.tableName
-    //         const function_name = `listen_update_for_${table_name.replaceAll('-', '_')}`
-    //         if (!tables.has(table_name)) {
-    //             tables.set(table_name, { function_name, repository })
-    //         }
-    //     }
-
-    //     // Active listeners
-    //     for (const [_, { subscriber, tables }] of subscribers) {
-    //         for (const [table_name, { function_name, repository }] of tables) {
-    //             const refs = [...this.#repositories_map.get(repository).values()]
-    //             const CreateUpdateListenerCMD = CreateUpdateListenerSqlBuilder(function_name, refs)
-    //             await repository.query(CreateUpdateListenerCMD)
-    //             const CreateTableTriggerCMD = CreateTableTriggerSqlBuilder(table_name, function_name)
-    //             await repository.query(CreateTableTriggerCMD)
-    //         }
-    //         await subscriber.listenTo('realtime_sync')
-    //         return fromEvent<DataChangePayload>(subscriber.notifications, 'realtime_sync')
-    //             .pipe(
-    //                 filter(payload => payload.type == 'removed' || !!payload.data),
-    //                 mergeMap(({ refs, type, id, data: updated_values = {}, new_doc }) => {
-    //                     const data = JsonUtil.deepJsonParse({ id, ...updated_values || {} })
-    //                     if (type == 'added' || type == 'removed') return refs.filter(r => r).map(({ ref }) => ({ ref, data, type }))
-    //                     if (type == 'modified') return refs.filter(r => r).reduce((p, { old_ref, ref }) => {
-    //                         if (old_ref == ref) {
-    //                             p.push({ data, ref, type })
-    //                         } else {
-    //                             p.push({ data: { id: new_doc.id }, ref: old_ref, type: 'removed' })
-    //                             p.push({ data: new_doc, ref, type: 'added' })
-    //                         }
-    //                         return p
-    //                     }, [] as UpdatedData[])
-    //                     return [] as UpdatedData[]
-    //                 })
-    //             )
-    //             .subscribe(this.changes)
-    //     }
-
-    // }
 }
 

@@ -3,7 +3,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.72",
+    "version": "1.0.73",
     "description": "",
     "main": "build/index.js",
     "types": "build/index.d.ts",
@@ -12,8 +12,10 @@
     ],
     "devDependencies": {
         "@livequery/types": "*",
+        "@types/node": "^18.11.9",
         "rxjs": "*",
-        "typeorm": "*"
+        "typeorm": "*",
+        "typescript": "*"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
@@ -22,14 +24,8 @@
     },
     "author": "",
     "license": "ISC",
+    "type": "module",
     "dependencies": {
-        "@livequery/nestjs": "*",
-        "@nestjs/common": "*",
-        "@nestjs/core": "*",
-        "@nestjs/typeorm": "*",
-        "@livequery/types": "^1.0.40",
-        "@types/node": "^18.11.9",
-        "typescript": "*"
-    }, 
-    "type": "module"
+        "@livequery/nestjs": "^1.0.50"
+    }
 }
