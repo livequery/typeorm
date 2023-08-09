@@ -1,33 +1,33 @@
 {
-    "name": "@livequery/typeorm", 
+    "name": "@livequery/typeorm",
     "author": "Duong Van Ba",
     "license": "MIT",
     "type": "module",
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.75",
+    "version": "1.0.77",
     "description": "Typeorm datasource mapping for @livequery ecosystem",
-    "main": "build/index.js",
-    "types": "build/index.d.ts",
+    "main": "./build/src/index.js",
+    "types": "./build/src/index.d.ts",
     "files": [
         "build/**/*"
     ],
     "exports": {
         ".": {
             "import": {
-                "types": "./build/index.d.ts",
-                "default": "./build/index.js"
+                "types": "./build/src/index.d.ts",
+                "default": "./build/src/index.js"
             }
         }
     },
     "devDependencies": {
-        "@livequery/types": "*",
+        "@livequery/nestjs": "^1.0.50",
+        "@livequery/types": "1.0.77",
         "@types/node": "^18.11.9",
         "rxjs": "*",
         "typeorm": "*",
-        "typescript": "*",
-        "@livequery/nestjs": "^1.0.50"
+        "typescript": "*"
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",

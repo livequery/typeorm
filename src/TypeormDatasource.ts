@@ -1,10 +1,10 @@
 import { DataSource, FindManyOptions, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
-import { LivequeryRequest } from '@livequery/types' 
 import { Cursor } from './helpers/Cursor.js'
 import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
 import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
+import { LivequeryRequest } from '@livequery/types'
 
 
 export type DatabaseEvent<T> = {
@@ -50,9 +50,11 @@ export class TypeormDatasource {
                 this.#refs_map.set(schema_ref, { repository, db_type, query_mapper })
                 if (realtime) {
                     const table_name = repository.metadata.tableName
+                    const $ = schema_ref.split('/')
+                    const is_collection_ref = $.length % 2 == 1
                     this.#realtime_repositories.set(table_name, new Set([
                         ... this.#realtime_repositories.get(table_name) || [],
-                        schema_ref
+                        is_collection_ref ? schema_ref : $.slice(0, -1).join('/')
                     ]))
                 }
             }
@@ -60,11 +62,14 @@ export class TypeormDatasource {
     }
 
 
-    caculate_ref<T>(event: DatabaseEvent<T>) {
+    convert_to_db_change<T = { id: string }>(event: DatabaseEvent<T>) {
         const refs = this.#realtime_repositories.get(event.table)
         if (!refs) return
-        const data = { ...event.old_data, ...event.new_data }
-        for (const ref of refs) {
+        const data = {
+            ...event.old_data || {},
+            ...event.new_data || {}
+        }
+        return [...refs].map(ref => {
             const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
             const new_ref = event.new_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
             return {
@@ -75,7 +80,7 @@ export class TypeormDatasource {
                 old_data: event.old_data,
                 new_data: event.new_data
             }
-        }
+        })
     }
 
     async query(query: LivequeryRequest) {
