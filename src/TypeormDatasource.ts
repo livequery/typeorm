@@ -1,6 +1,5 @@
 import { DataSource, FindManyOptions, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
-import { LivequeryRequest } from '@livequery/types'
-import { Observable, map } from "rxjs";
+import { LivequeryRequest } from '@livequery/types' 
 import { Cursor } from './helpers/Cursor.js'
 import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
@@ -8,13 +7,12 @@ import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
 
 
-export type DatabaseEvent<T extends { id: string } = { id: string }> = {
+export type DatabaseEvent<T> = {
     table: string
     type: 'added' | 'modified' | 'removed',
-    data: Partial<T>,
-    old_data: T
+    new_data?: Partial<T>,
+    old_data?: T
 }
-
 
 type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
 
@@ -62,24 +60,22 @@ export class TypeormDatasource {
     }
 
 
-    realtime_map(data: Observable<DatabaseEvent>) {
-        return data.pipe(
-            map(event => {
-                const refs = this.#realtime_repositories.get(event.table)
-                if (!refs) return
-                const data = { ...event.old_data, ...event.data }
-                for (const ref of refs) {
-                    const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
-                    const new_ref = event.data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
-                    return {
-                        old_ref,
-                        new_ref,
-                        old_data: event.old_data,
-                        new_data: event.data
-                    }
-                }
-            })
-        )
+    caculate_ref<T>(event: DatabaseEvent<T>) {
+        const refs = this.#realtime_repositories.get(event.table)
+        if (!refs) return
+        const data = { ...event.old_data, ...event.new_data }
+        for (const ref of refs) {
+            const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
+            const new_ref = event.new_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
+            return {
+                type: event.type,
+                table: event.table,
+                old_ref,
+                new_ref,
+                old_data: event.old_data,
+                new_data: event.new_data
+            }
+        }
     }
 
     async query(query: LivequeryRequest) {

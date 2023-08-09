@@ -1,11 +1,11 @@
-const { ObjectId } = require('mongodb')
+import { ObjectId } from "typeorm";
 
 export class MongoDBMapper {
 
     static toMongoDBObject<T extends { [key: string]: any }>(data: T) {
         if (!data) return data
         const { id, _id, ...rest } = data;
-        return id ? { _id: ObjectId(id), ...rest } : data
+        return id ? { _id: new ObjectId(id), ...rest } : data
     }
 
     static toMongoDBQuery<T extends { [key: string]: any }>(data: T) {
