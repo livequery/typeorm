@@ -1,4 +1,4 @@
-import { ObjectId } from "typeorm";
+import { ObjectId } from "bson";
 
 export class MongoDBMapper {
 
