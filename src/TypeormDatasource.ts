@@ -4,15 +4,10 @@ import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
 import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
-import { LivequeryRequest } from '@livequery/types'
+import { LivequeryRequest, LivequeryBaseEntity, WebsocketSyncPayload, DatabaseEvent } from '@livequery/types'
+import { Observable, map, mergeAll, pipe } from "rxjs";
 
 
-export type DatabaseEvent<T> = {
-    table: string
-    type: 'added' | 'modified' | 'removed',
-    new_data?: Partial<T>,
-    old_data?: T
-}
 
 type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
 
@@ -61,27 +56,32 @@ export class TypeormDatasource {
         }
     }
 
-
-    convert_to_db_change<T = { id: string }>(event: DatabaseEvent<T>) {
-        const refs = this.#realtime_repositories.get(event.table)
-        if (!refs) return
-        const data = {
-            ...event.old_data || {},
-            ...event.new_data || {}
-        }
-        return [...refs].map(ref => {
-            const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
-            const new_ref = event.new_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
-            return {
-                type: event.type,
-                table: event.table,
-                old_ref,
-                new_ref,
-                old_data: event.old_data,
-                new_data: event.new_data
-            }
-        })
+    pipe2websocket<T extends LivequeryBaseEntity = LivequeryBaseEntity>() {
+        return pipe<Observable<DatabaseEvent<T>>, Observable<WebsocketSyncPayload<T>[]>, Observable<WebsocketSyncPayload<T>>>(
+            map((event: DatabaseEvent<T>) => {
+                const refs = this.#realtime_repositories.get(event.table)
+                if (!refs) return []
+                const data = {
+                    ...event.old_data || {},
+                    ...event.new_data || {}
+                }
+                return [...refs].map(ref => {
+                    const old_ref = event.old_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : event.old_data[k]).join('/') : null
+                    const new_ref = event.new_data ? ref.split('/').map((k, i) => i % 2 == 0 ? k : data[k]).join('/') : null
+                    return {
+                        type: event.type,
+                        table: event.table,
+                        old_ref,
+                        new_ref,
+                        old_data: event.old_data as T,
+                        new_data: event.new_data as T
+                    } as WebsocketSyncPayload<T>
+                })
+            }),
+            mergeAll()
+        )
     }
+
 
     async query(query: LivequeryRequest) {
         await this.#init_progress
