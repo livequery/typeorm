@@ -2,7 +2,6 @@ import { DataSource, FindManyOptions, Repository, And, FindOperator, DataSourceO
 import { Cursor } from './helpers/Cursor.js'
 import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
-import { MongoDBMapper } from "./helpers/MongoDBMapper.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
 import { LivequeryRequest, LivequeryBaseEntity, WebsocketSyncPayload, DatabaseEvent } from '@livequery/types'
 import { Observable, map, mergeAll, pipe } from "rxjs";
@@ -113,7 +112,7 @@ export class TypeormDatasource {
 
             // Keys
             ...Object
-                .entries(db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(keys) : keys)
+                .entries(keys)
                 .map(([key, value]) => ([key, 'eq', value])),
 
         ].reduce((p, [key, ex, value]) => {
@@ -168,15 +167,13 @@ export class TypeormDatasource {
         // Document query
         if (!is_collection) {
             const item = await repository.findOne(query_params) ?? null
-            return { item: db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(item) : item }
+            return { item }
         }
 
         // Collection query
         const data = await repository.find(query_params)
         const has_more = data.length > options._limit
-        const items = data.slice(0, options._limit).map(
-            item => db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(item) : item
-        )
+        const items = data.slice(0, options._limit)
         const last_item = items[options._limit - 1]
         const next_cursor = !has_more ? null : Cursor.encode({
             [DEFAULT_SORT_FIELD]: last_item[DEFAULT_SORT_FIELD],
@@ -189,37 +186,37 @@ export class TypeormDatasource {
         }
     }
 
-    async #post(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
+    async #post(req: LivequeryRequest, { repository }: RefMetadata) {
         const merged = {
             ...new (repository.metadata.target as any)(),
             ...req.keys,
             ...req.body
         }
-        const { _id, id, ...rest } = merged
-        const data = await repository.save(db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(rest) : merged)
+        const { _id, id } = merged
+        const data = await repository.save(merged)
         return {
-            item: db_type == 'mongodb' ? MongoDBMapper.fromMongoDBObject(data) : data
+            item: data
         }
     }
 
-    async #put(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
+    async #put(req: LivequeryRequest, { repository }: RefMetadata) {
         return await repository.update(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys,
+            req.keys,
             req.body
         )
     }
 
-    async #patch(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
+    async #patch(req: LivequeryRequest, {  repository }: RefMetadata) {
         return await repository.update(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys,
+            req.keys,
             req.body
         )
 
     }
 
-    async #del(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
+    async #del(req: LivequeryRequest, { repository }: RefMetadata) {
         return await repository.delete(
-            db_type == 'mongodb' ? MongoDBMapper.toMongoDBObject(req.keys) : req.keys
+            req.keys
         )
     }
 }
