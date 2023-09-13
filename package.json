@@ -6,7 +6,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.80",
+    "version": "1.0.81",
     "description": "Typeorm datasource mapping for @livequery ecosystem",
     "main": "./build/src/index.js",
     "types": "./build/src/index.d.ts",
@@ -35,6 +35,6 @@
         "deploy": "rm -rf build && yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish --access public"
     },
     "dependencies": {
-        "bson": "^5.4.0"
+        "bson": "6.0.0"
     }
 }

@@ -5,6 +5,7 @@ import { DEFAULT_SORT_FIELD } from "./const.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
 import { LivequeryRequest, LivequeryBaseEntity, WebsocketSyncPayload, DatabaseEvent } from '@livequery/types'
 import { Observable, map, mergeAll, pipe } from "rxjs";
+import { ObjectId } from "bson";
 
 
 
@@ -87,6 +88,7 @@ export class TypeormDatasource {
 
         const config = this.#refs_map.get((query as any).schema_ref)
         if (!config) throw { status: 500, code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
+
         if (config.query_mapper) return TypeormDatasource.generate_query_filters(query, config.db_type)
         if (query.method == 'get') return this.#get(query, config)
         if (query.method == 'post') return this.#post(query, config)
@@ -123,7 +125,10 @@ export class TypeormDatasource {
             return p
         }, new Map<string, object[]>())
 
+
         let addional_conditions = {}
+
+
 
         return [...conditions.entries()].reduce((p, [key, conditions]) => {
             if (key == '_search') {
@@ -144,7 +149,14 @@ export class TypeormDatasource {
     async #get(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
 
 
-        const where = TypeormDatasource.generate_query_filters(req, db_type)
+        const query = TypeormDatasource.generate_query_filters(req, db_type)
+        const where=  {
+            ...query,
+            ...  query['id'] && db_type == 'mongodb' ? {
+                id: undefined,
+                _id: new ObjectId(query['id'].$eq)
+            }:{}
+        }
 
         const { options, is_collection } = req
 
@@ -161,7 +173,6 @@ export class TypeormDatasource {
             ...order ? { order } : {},
             ...options._select ? { select: (options as any)._select as string[] } : {},
         }
-
 
 
         // Document query
