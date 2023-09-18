@@ -98,7 +98,10 @@ export class TypeormDatasource {
     }
 
     static generate_query_filters({ options, keys, filters }: LivequeryRequest, db_type: DataSourceOptions['type']) {
-        const conditions = [
+
+
+
+        const raw_conditions = [
 
             // Client filters
             ...filters,
@@ -117,32 +120,41 @@ export class TypeormDatasource {
                 .entries(keys)
                 .map(([key, value]) => ([key, 'eq', value])),
 
-        ].reduce((p, [key, ex, value]) => {
-            if (!p.has(key)) p.set(key, [])
+        ]
+
+        const normal_conditions = new Map<string, object[]>()
+        const like_conditions = new Array<object>()
+
+        for (const [key, ex, value] of raw_conditions) {
             const resolver = ExpressionMapper[ex as keyof typeof ExpressionMapper]
             if (!resolver) throw { status: 500, code: `QUERY_${ex.toUpperCase()}_NOT_SUPPORT` }
-            p.get(key).push(resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value))
-            return p
-        }, new Map<string, object[]>())
-
-
-        let addional_conditions = {}
-
-
-
-        return [...conditions.entries()].reduce((p, [key, conditions]) => {
-            if (key == '_search') {
-                if (db_type == 'mongodb') {
-                    p['$text'] = { $search: `${conditions[0]['$eq']}` }
-                } else {
-                    throw { status: 500, code: `${db_type.toUpperCase()}_SEARCH_NOT_SUPPORT` };
-                }
+            const filter = resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value)
+            if (key == 'like') {
+                like_conditions.push(filter)
             } else {
-                p[key] = db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
+                normal_conditions.set(key, [
+                    ...normal_conditions.get(key) || [],
+                    filter
+                ])
             }
+        }
 
-            return p
-        }, addional_conditions)
+        const normal_conditions_object = [...normal_conditions].reduce((p, [key, conditions]) => ({
+            ...p,
+            [key]: db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
+        }), {})
+
+        if (db_type == 'mongodb') return {
+            ...normal_conditions_object,
+            ...like_conditions.length > 0 ? { $or: like_conditions } : {}
+        }
+
+        if (like_conditions.length > 0) return like_conditions.map(like => ({
+            ...normal_conditions_object,
+            ...like
+        }))
+
+        return normal_conditions_object
 
     }
 
@@ -150,12 +162,12 @@ export class TypeormDatasource {
 
 
         const query = TypeormDatasource.generate_query_filters(req, db_type)
-        const where=  {
+        const where = {
             ...query,
-            ...  query['id'] && db_type == 'mongodb' ? {
+            ...query['id'] && db_type == 'mongodb' ? {
                 id: undefined,
                 _id: new ObjectId(query['id'].$eq)
-            }:{}
+            } : {}
         }
 
         const { options, is_collection } = req
@@ -217,7 +229,7 @@ export class TypeormDatasource {
         )
     }
 
-    async #patch(req: LivequeryRequest, {  repository }: RefMetadata) {
+    async #patch(req: LivequeryRequest, { repository }: RefMetadata) {
         return await repository.update(
             req.keys,
             req.body

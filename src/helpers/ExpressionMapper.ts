@@ -1,4 +1,4 @@
-import { Not, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Between, In } from "typeorm";
+import { Not, LessThan, LessThanOrEqual, MoreThan, MoreThanOrEqual, Between, In, ILike } from "typeorm";
 
 export const ExpressionMapper = {
     eq: { sql: v => v, mongodb: v => ({ $eq: v }) },
@@ -8,5 +8,6 @@ export const ExpressionMapper = {
     gt: { sql: v => MoreThan(v), mongodb: v => ({ $gt: v }) },
     gte: { sql: v => MoreThanOrEqual(v), mongodb: v => ({ $gte: v }) },
     between: { sql: ([a, b]) => Between(a, b), mongodb: ([a, b]) => ({ $gte: a, $lt: b }) },
-    in: { sql: a => In(a), mongodb: a => ({ $in: a }) }
+    in: { sql: a => In(a), mongodb: a => ({ $in: a }) },
+    like: { sql: v => ILike(`%${v}%`), mongodb: v => ({ $regex: `${v}` }) }
 }
