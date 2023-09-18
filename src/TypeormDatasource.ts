@@ -123,14 +123,14 @@ export class TypeormDatasource {
         ]
 
         const normal_conditions = new Map<string, object[]>()
-        const like_conditions = new Array<object>()
+        const like_conditions = new Array<{ key: string, filter: object }>
 
         for (const [key, ex, value] of raw_conditions) {
             const resolver = ExpressionMapper[ex as keyof typeof ExpressionMapper]
             if (!resolver) throw { status: 500, code: `QUERY_${ex.toUpperCase()}_NOT_SUPPORT` }
             const filter = resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value)
             if (ex == 'like') {
-                like_conditions.push({ key: filter })
+                like_conditions.push(key, filter)
             } else {
                 normal_conditions.set(key, [
                     ...normal_conditions.get(key) || [],
@@ -146,12 +146,23 @@ export class TypeormDatasource {
 
         if (db_type == 'mongodb') return {
             ...normal_conditions_object,
-            ...like_conditions.length > 0 ? { $or: like_conditions } : {}
+            ...like_conditions.length == 0 ? {} : {
+                $or: like_conditions.reduce(
+                    (
+                        p,
+                        { filter, key }) => ({
+                            ...p,
+                            [key]: filter
+                        }
+                    ),
+                    {}
+                )
+            }
         }
 
-        if (like_conditions.length > 0) return like_conditions.map(like => ({
+        if (like_conditions.length > 0) return like_conditions.map(({ filter, key }) => ({
             ...normal_conditions_object,
-            ...like
+            [key]: filter
         }))
 
         return normal_conditions_object

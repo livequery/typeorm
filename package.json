@@ -6,7 +6,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.83",
+    "version": "1.0.84",
     "description": "Typeorm datasource mapping for @livequery ecosystem",
     "main": "./build/src/index.js",
     "types": "./build/src/index.d.ts",
