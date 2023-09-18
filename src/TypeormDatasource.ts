@@ -129,8 +129,8 @@ export class TypeormDatasource {
             const resolver = ExpressionMapper[ex as keyof typeof ExpressionMapper]
             if (!resolver) throw { status: 500, code: `QUERY_${ex.toUpperCase()}_NOT_SUPPORT` }
             const filter = resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value)
-            if (key == 'like') {
-                like_conditions.push(filter)
+            if (ex == 'like') {
+                like_conditions.push({ key: filter })
             } else {
                 normal_conditions.set(key, [
                     ...normal_conditions.get(key) || [],
