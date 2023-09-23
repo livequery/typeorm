@@ -130,7 +130,7 @@ export class TypeormDatasource {
             if (!resolver) throw { status: 500, code: `QUERY_${ex.toUpperCase()}_NOT_SUPPORT` }
             const filter = resolver[db_type == 'mongodb' ? 'mongodb' : 'sql'](value)
             if (ex == 'like') {
-                like_conditions.push({[key]:filter})
+                like_conditions.push({ [key]: filter })
             } else {
                 normal_conditions.set(key, [
                     ...normal_conditions.get(key) || [],
@@ -142,12 +142,20 @@ export class TypeormDatasource {
         const normal_conditions_object = [...normal_conditions].reduce((p, [key, conditions]) => ({
             ...p,
             [key]: db_type == 'mongodb' ? conditions.reduce((p, e) => ({ ...p, ...e }), {}) : And(...conditions as FindOperator<any>[])
-        }), {})
+        }), {}) as any
 
-        if (db_type == 'mongodb') return {
-            ...normal_conditions_object,
-            ...like_conditions.length == 0 ? {} : {
-                $or: like_conditions
+        if (db_type == 'mongodb') {
+            const conditions = {
+                ...normal_conditions_object,
+                ...like_conditions.length == 0 ? {} : {
+                    $or: like_conditions
+                }
+            }
+            if (!conditions.id) return conditions
+            const { id, ...rest } = conditions
+            return {
+                ...rest,
+                _id: new ObjectId(id.$eq)
             }
         }
 
@@ -163,14 +171,7 @@ export class TypeormDatasource {
     async #get(req: LivequeryRequest, { db_type, repository }: RefMetadata) {
 
 
-        const query = TypeormDatasource.generate_query_filters(req, db_type)
-        const where = {
-            ...query,
-            ...query['id'] && db_type == 'mongodb' ? {
-                id: undefined,
-                _id: new ObjectId(query['id'].$eq)
-            } : {}
-        }
+        const where = TypeormDatasource.generate_query_filters(req, db_type)
 
         const { options, is_collection } = req
 
