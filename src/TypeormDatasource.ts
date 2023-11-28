@@ -1,36 +1,38 @@
-import { DataSource, FindManyOptions, Repository, And, FindOperator, DataSourceOptions } from "typeorm";
+import { FindManyOptions, Repository, And, FindOperator, DataSourceOptions, DataSource } from "typeorm";
 import { Cursor } from './helpers/Cursor.js'
 import { RouteOptions } from "./RouteOptions.js";
 import { DEFAULT_SORT_FIELD } from "./const.js";
 import { ExpressionMapper } from "./helpers/ExpressionMapper.js";
 import { LivequeryRequest, LivequeryBaseEntity, WebsocketSyncPayload, DatabaseEvent } from '@livequery/types'
-import { Observable, map, mergeAll, pipe } from "rxjs";
+import { Observable, map, mergeAll } from "rxjs";
 import { ObjectId } from "bson";
 
 
 
 type RefMetadata = { repository: Repository<any>, db_type: DataSourceOptions['type'], query_mapper?: boolean }
 
-export class TypeormDatasource {
+
+
+export type LivequeryDatasourceOptions<T> = Array<T & { refs: string[] }>
+
+export type LivequeryDatasource<Options = {}, StreamPayload = {}, InjectList extends Array<any> = undefined> = {
+    init(routes: LivequeryDatasourceOptions<Options>, injects: InjectList): Promise<void>
+    query(query: LivequeryRequest): any
+    pipe_realtime?: (stream: Observable<StreamPayload>) => Observable<WebsocketSyncPayload>
+}
+
+
+export class TypeormDatasource implements LivequeryDatasource<RouteOptions, DatabaseEvent, DataSource[]> {
 
     #refs_map = new Map<string, RefMetadata>()
     #repositories_map = new Map<Repository<any>, Set<string>>()
     #entities_map = new Map<any, Repository<any>>()
     #realtime_repositories = new Map<string, Set<string>>()
 
-    #init_progress: Promise<void>
-
-    constructor(
-        private connections: Array<DataSource & { name: string }>,
-        private config: Array<RouteOptions & { refs: string[] }>
-    ) {
-        this.#init_progress = this.#init()
-    }
-
-    async #init() {
-        for (const { connection_name = 'default', entity, refs, realtime = false, query_mapper } of this.config) {
+    async init(routes: LivequeryDatasourceOptions<RouteOptions>, ds: DataSource[]) {
+        for (const { connection_name = 'default', entity, refs, realtime = false, query_mapper } of routes) {
             for (const ref of refs) {
-                const datasource = this.connections.find(c => c.name == connection_name)
+                const datasource = ds.find(c => c.name == connection_name)
                 const db_type = datasource.options.type
                 if (!datasource) throw new Error(`Can not find [${connection_name}] datasource`)
 
@@ -56,8 +58,8 @@ export class TypeormDatasource {
         }
     }
 
-    pipe2websocket<T extends LivequeryBaseEntity = LivequeryBaseEntity>() {
-        return pipe<Observable<DatabaseEvent<T>>, Observable<WebsocketSyncPayload<T>[]>, Observable<WebsocketSyncPayload<T>>>(
+    enable_realtime<T extends LivequeryBaseEntity = LivequeryBaseEntity>(d: Observable<DatabaseEvent>) {
+        return d.pipe(
             map((event: DatabaseEvent<T>) => {
                 const refs = this.#realtime_repositories.get(event.table)
                 if (!refs) return []
@@ -84,7 +86,6 @@ export class TypeormDatasource {
 
 
     async query(query: LivequeryRequest) {
-        await this.#init_progress
 
         const config = this.#refs_map.get((query as any).schema_ref)
         if (!config) throw { status: 500, code: 'REF_NOT_FOUND', message: 'Missing ref config in livequery system' }
