@@ -18,8 +18,10 @@ export type LivequeryDatasourceOptions<T> = Array<T & { refs: string[] }>
 export type LivequeryDatasource<Options = {}, StreamPayload = {}, InjectList extends Array<any> = undefined> = {
     init(routes: LivequeryDatasourceOptions<Options>, injects: InjectList): Promise<void>
     query(query: LivequeryRequest): any
-    pipe_realtime?: (stream: Observable<StreamPayload>) => Observable<WebsocketSyncPayload>
+    enable_realtime?: (stream: Observable<StreamPayload>) => Observable<WebsocketSyncPayload>
 }
+
+
 
 
 export class TypeormDatasource implements LivequeryDatasource<RouteOptions, DatabaseEvent, DataSource[]> {
