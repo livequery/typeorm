@@ -6,7 +6,7 @@
     "repository": {
         "url": "git@github.com:livequery/typeorm.git"
     },
-    "version": "1.0.91",
+    "version": "1.0.92",
     "description": "Typeorm datasource mapping for @livequery ecosystem",
     "main": "./build/src/index.js",
     "types": "./build/src/index.d.ts",
@@ -22,7 +22,7 @@
         }
     },
     "devDependencies": { 
-        "@livequery/types": "1.0.79",
+        "@livequery/types": "^1.0.79",
         "@types/node": "^18.11.9",
         "rxjs": "*",
         "typeorm": "*",
@@ -34,6 +34,6 @@
         "deploy": "rm -rf build && yarn build; git add .; git commit -m \"Update\"; git push origin master; npm publish --access public"
     },
     "dependencies": {
-        "bson": "6.0.0"
+        "bson": "*"
     }
 }
